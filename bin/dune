@@ -1,0 +1,24 @@
+(executable
+ (public_name graphqlcli)
+ (name main)
+ (libraries
+  graphqlcli
+  fmt
+  ppx_deriving
+  ppx_sexp_conv
+  sexplib
+  async
+  async_unix
+  cohttp
+  cohttp-async
+  yojson)
+ (flags
+  (:standard -w -11 -open Sexplib.Std))
+ (preprocess
+  (pps
+   ppx_jane
+   ppx_expect
+   ppx_deriving.show
+   ppx_deriving.ord
+   ppx_deriving.eq
+   ppx_sexp_conv)))
