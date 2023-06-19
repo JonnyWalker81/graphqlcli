@@ -38,16 +38,16 @@ type t =
 
 let lookup_keyword name =
   match name with
-  | "String" -> String
+  (* | "String" -> String *)
   | "schema" -> Schema
-  | "query" -> Query
-  | "mutation" -> Mutation
+  (* | "query" -> Query *)
+  (* | "mutation" -> Mutation *)
   | "type" -> Type
   | "scalar" -> Scalar
   | "input" -> Input
-  | "Int" -> Integer
-  | "Float" -> Float
-  | "Boolean" -> Boolean
+  (* | "Int" -> Integer *)
+  (* | "Float" -> Float *)
+  (* | "Boolean" -> Boolean *)
   | "union" -> Union
-  | "ID" -> ID
+  (* | "ID" -> ID *)
   | _ -> Name name

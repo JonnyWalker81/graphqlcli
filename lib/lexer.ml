@@ -167,10 +167,10 @@ type Foo {
       {|
       Token.Schema
       Token.LeftBrace
-      Token.Query
+      (Token.Name "query")
       Token.Colon
       (Token.Name "MyQueryRootType")
-      Token.Mutation
+      (Token.Name "mutation")
       Token.Colon
       (Token.Name "MyMutationRootType")
       Token.RightBrace
@@ -179,7 +179,7 @@ type Foo {
       Token.LeftBrace
       (Token.Name "someField")
       Token.Colon
-      Token.String
+      (Token.Name "String")
       Token.RightBrace
       Token.Type
       (Token.Name "MyMutationRootType")
@@ -188,10 +188,10 @@ type Foo {
       Token.LeftParen
       (Token.Name "to")
       Token.Colon
-      Token.String
+      (Token.Name "String")
       Token.RightParen
       Token.Colon
-      Token.String
+      (Token.Name "String")
       Token.RightBrace
       (Token.Name "enum")
       (Token.Name "Language")
@@ -207,10 +207,10 @@ type Foo {
       Token.LeftBrace
       (Token.Name "x")
       Token.Colon
-      Token.Float
+      (Token.Name "Float")
       (Token.Name "y")
       Token.Colon
-      Token.Float
+      (Token.Name "Float")
       Token.RightBrace
       (Token.StringLiteral "this is a string")
       (Token.Comment "this is a comment")
@@ -227,13 +227,13 @@ type Foo {
       (Token.Name "bar")
       Token.Colon
       Token.LeftBracket
-      Token.String
+      (Token.Name "String")
       Token.Exclamation
       Token.RightBracket
       Token.Exclamation
       (Token.Name "baz")
       Token.Colon
-      Token.Boolean
+      (Token.Name "Boolean")
       Token.RightBrace
       Token.Eof
 |}]
