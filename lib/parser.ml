@@ -2,6 +2,7 @@ open Base
 open Core
 
 let ( let* ) res f = Base.Result.bind res ~f
+let ( let+ ) res f = Option.bind res ~f
 
 type t = { lexer : Lexer.t; cur_token : Token.t; peek_token : Token.t }
 [@@deriving show]
@@ -15,6 +16,11 @@ let chomp_semicolon parser =
   | Token.Semicolon -> next_token parser
   | _ -> parser
 
+let chomp parser tok =
+  match tok with
+  | tok when phys_equal tok parser.peek_token -> next_token parser
+  | _ -> parser
+
 let expect_peek parser condition =
   match condition parser.peek_token with
   | true -> (next_token parser, true)
@@ -25,6 +31,9 @@ let expect_peek_left_brace parser =
 
 let expect_peek_right_brace parser =
   expect_peek parser (function Token.RightBrace -> true | _ -> false)
+
+let expect_peek_right_bracket parser =
+  expect_peek parser (function Token.RightBracket -> true | _ -> false)
 
 let expect_peek_colon parser =
   expect_peek parser (function Token.Colon -> true | _ -> false)
@@ -63,7 +72,12 @@ and parse_definition parser =
   match parser.cur_token with
   | Token.Type -> parse_type (next_token parser)
   | Token.Schema -> parse_schema (next_token parser)
+  | Token.Scalar -> parse_scalar (next_token parser)
   | _ -> failwith "unexpected definition"
+
+and parse_scalar parser =
+  let* parser, name = parse_name parser in
+  Ok (parser, Ast.TypeDefinition (Ast.Scalar name))
 
 and parse_schema parser =
   match parser.cur_token with
@@ -128,38 +142,95 @@ and parse_type parser =
   match (parser, ok) with
   | parser, true ->
       let* parser, fields = parse_type_definition parser in
+  let () = Printf.printf "parsing type:  %d...\n" (List.length fields) in
       Ok (parser, Ast.TypeDefinition (Ast.Object { name; fields }))
   | _, false -> Error "expected left brace"
 
 and parse_type_definition parser =
-  let rec parse_type_def' parser fields =
+  let rec parse_type_def' parser fields (args: (Ast.argument_definition list) option) =
     match parser.peek_token with
-    | Token.RightBrace -> Ok (parser, List.rev fields)
+    | Token.RightBrace | Token.Eof -> let () = Printf.printf "here...cur: %s, peek: %s\n" (Token.show parser.cur_token) (Token.show parser.peek_token) in
+      Ok (parser, List.rev fields)
     | _ -> (
+        (* let parser = next_token parser in *)
+        let* parser, name = parse_name (next_token parser) in
+        match parser.peek_token with
+        | Token.LeftParen ->
+          let parser = next_token parser in
+          let parser = next_token parser in
+            let* parser, args = parse_field_args parser in
+            parse_type_def' parser fields args
+        | Token.Colon ->
+            let parser = next_token parser in
+            let parser = next_token parser in
+            let* parser, ty = parse_graphql_type parser in
+
+  let () = Printf.printf "parsing type:  %b...\n" (Option.is_some args) in
+            let field = Ast.{ name; args = args; ty } in
+            parse_type_def' parser (field :: fields) args
+        | _ -> Error "parse_type_definition: expected a name")
+  in
+  let* parser, td = parse_type_def' parser [] None in
+  let parser, ok = expect_peek_right_brace parser in
+  match (parser, ok) with
+  | parser, true -> Ok (parser, td)
+  | _, false -> Error "expected right brace"
+
+and parse_field_args parser =
+  let () = Printf.printf "parsing args...\n" in
+  let rec parse_field_args' parser args =
+  let () = Printf.printf "parsing args rec...cur: %s, peek: %s\n" (Token.show parser.cur_token) (Token.show parser.peek_token) in
+    let parser = chomp parser Token.Comma in
+    match parser.peek_token with
+    | Token.RightParen ->
+        (* let parser = next_token parser in *)
         let parser = next_token parser in
+  let () = Printf.printf "parsing args return...cur: %s, peek: %s\n" (Token.show parser.cur_token) (Token.show parser.peek_token) in
+        Ok (next_token parser, Some(List.rev args))
+    | Token.Colon -> (
+  let () = Printf.printf "parsing args name...\n" in
         let* parser, name = parse_name parser in
         match parser.peek_token with
         | Token.Colon ->
             let parser = next_token parser in
             let parser = next_token parser in
-            let* parser, type_name = parse_name parser in
-            let field = Ast.{ name; ty = Ast.{ name = type_name } } in
-            parse_type_def' parser (field :: fields)
-        | _ -> Error "parse_type_definition: expected a name")
+            let* parser, gql_type = parse_graphql_type parser in
+            let parser, arg = (parser, Ast.{ name; ty = gql_type }) in
+            parse_field_args' parser (arg :: args)
+        | _ -> Error "parse_field_args")
+    | _ -> Error (Printf.sprintf "expected args: cur: %s, peek: %s" (Token.show parser.cur_token) (Token.show parser.peek_token))
   in
-  let* parser, td = parse_type_def' parser [] in
-  let parser, ok = expect_peek_right_brace parser in
-  match (parser, ok) with
-  | parser, true -> Ok (parser, td)
-  | _, false -> Error "expected right brace"
+  parse_field_args' parser []
+
+and parse_graphql_type parser =
+  match parser.cur_token with
+  | Token.LeftBracket -> (
+      let parser = next_token parser in
+      let* parser, gql_type = parse_graphql_type parser in
+      let parser, ok = expect_peek_right_bracket parser in
+      match (parser, ok) with
+      | parser, true -> (
+          match parser.peek_token with
+          | Token.Exclamation ->
+              Ok (next_token parser, Ast.NonNullType (Ast.ListType gql_type))
+          | _ -> Ok (parser, Ast.ListType gql_type))
+      | _ -> Error "expected closing right bracket for list type")
+  | Token.Name _ -> (
+      let* parser, name = parse_name parser in
+      match parser.peek_token with
+      | Token.Exclamation ->
+          Ok (next_token parser, Ast.NonNullType (Ast.NamedType name))
+      | _ -> Ok (parser, Ast.NamedType name))
+  | _ -> Error "parse_graphql_type: expected a name or left bracket"
 
 and parse_name parser =
   match parser.cur_token with
   | Token.Name n -> Ok (parser, n)
   | _ ->
       Error
-        (Printf.sprintf "parse_name: expected name: %s"
-           (Token.show parser.cur_token))
+        (Printf.sprintf "parse_name: expected name: cur: %s, peek: %s"
+           (Token.show parser.cur_token)
+           (Token.show parser.peek_token))
 
 let show_type_definition = Ast.show_type_definition
 
@@ -189,8 +260,14 @@ module Test = struct
   let%expect_test "testSimpleDocument" =
     let input =
       {|
+        scalar UUID
                  type Query {
                     foo: String
+                    bar: String!
+                    baz: [String]
+                    qux: [String]!
+                    get: [String!]!
+                    set: [[String!]!]!
                  }
                  |}
     in
@@ -198,8 +275,26 @@ module Test = struct
     [%expect
       {|
       Document: [
+          (Scalar "UUID")
+
           (Object
-         { name = "Query"; fields = [{ name = "foo"; ty = { name = "String" } }] })
+         { name = "Query";
+           fields =
+           [{ name = "foo"; args = None; ty = (NamedType "String") };
+             { name = "bar"; args = None; ty = (NonNullType (NamedType "String")) };
+             { name = "baz"; args = None; ty = (ListType (NamedType "String")) };
+             { name = "qux"; args = None;
+               ty = (NonNullType (ListType (NamedType "String"))) };
+             { name = "get"; args = None;
+               ty = (NonNullType (ListType (NonNullType (NamedType "String")))) };
+             { name = "set"; args = None;
+               ty =
+               (NonNullType
+                  (ListType
+                     (NonNullType (ListType (NonNullType (NamedType "String"))))))
+               }
+             ]
+           })
 
       ]
 
@@ -215,7 +310,8 @@ module Test = struct
                  |}
     in
     expect_document input;
-    [%expect {|
+    [%expect
+      {|
       mutation -> MyMutation
       query -> MyQuery
       Document: [
@@ -225,4 +321,20 @@ module Test = struct
       ]
 
               |}]
+
+  let%expect_test "testFieldWithArgs" =
+    let input =
+      {|
+         scalar UUID
+                  type Query {
+                     foo(bar: Int): String
+                  }
+                  |}
+    in
+    expect_document input;
+    [%expect {|
+
+       ]
+
+               |}]
 end

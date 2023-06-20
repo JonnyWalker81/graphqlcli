@@ -52,16 +52,51 @@ let read_number lexer = read_while is_digit lexer ""
 let rec skip_while condition lexer =
   if condition lexer.ch then skip_while condition (read_char lexer) else lexer
 
-let read_string lexer =
+let peek lexer ch current matched =
+  if lexer.read_position >= String.length lexer.input then (lexer, Token.Eof)
+  else
+    let peek_char = String.get lexer.input lexer.read_position in
+    if Char.to_int peek_char = Char.to_int ch then
+      let lexer = read_char lexer in
+      (read_char lexer, matched)
+    else (read_char lexer, current)
+
+let peek_is lexer amount to_match =
+  if lexer.position + amount >= String.length lexer.input then (lexer, false)
+  else
+    let peek_char = String.get lexer.input (lexer.position + amount) in
+    if Char.to_int peek_char = Char.to_int to_match then (lexer, true)
+    else (lexer, false)
+
+let read_multiline_string lexer =
   let rec loop lexer str =
     match lexer.ch with
-    | '"' | '\x00' -> (read_char lexer, str)
+    | '\x00' -> (read_char lexer, str)
     | _ ->
-        let str = str ^ Char.escaped lexer.ch in
-        loop (read_char lexer) str
+        let lexer, is_quote_one = peek_is lexer 1 '"' in
+        let lexer, is_quote_two = peek_is lexer 2 '"' in
+        if is_quote_one && is_quote_two then (read_char lexer, str)
+        else
+          let str = str ^ Char.escaped lexer.ch in
+          loop (read_char lexer) str
   in
   let lexer, s = loop lexer "" in
   (lexer, Token.StringLiteral s)
+
+let read_string lexer =
+  let lexer, is_quote_one = peek_is lexer 1 '"' in
+  let lexer, is_quote_two = peek_is lexer 2 '"' in
+  if is_quote_one && is_quote_two then read_multiline_string lexer
+  else
+    let rec loop lexer str =
+      match lexer.ch with
+      | '"' | '\x00' -> (read_char lexer, str)
+      | _ ->
+          let str = str ^ Char.escaped lexer.ch in
+          loop (read_char lexer) str
+    in
+    let lexer, s = loop lexer "" in
+    (lexer, Token.StringLiteral s)
 
 let is_not_end_of_line ch = match ch with '\n' | '\r' -> false | _ -> true
 
@@ -159,6 +194,9 @@ type Foo {
   bar: [String!]!
   baz: Boolean
 }
+
+        """This is a multi
+         line string in graphQL"""
 |}
     in
     let tokens = tokenize input in
@@ -235,6 +273,9 @@ type Foo {
       Token.Colon
       (Token.Name "Boolean")
       Token.RightBrace
+      (Token.StringLiteral "")
+      (Token.StringLiteral "This is a multi\\n         line string in graphQL")
+      (Token.StringLiteral "")
       Token.Eof
 |}]
 end
