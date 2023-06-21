@@ -231,7 +231,7 @@ type Foo {
       Token.Colon
       (Token.Name "String")
       Token.RightBrace
-      (Token.Name "enum")
+      Token.Enum
       (Token.Name "Language")
       Token.LeftBrace
       (Token.Name "EN")

@@ -49,5 +49,6 @@ let lookup_keyword name =
   (* | "Float" -> Float *)
   (* | "Boolean" -> Boolean *)
   | "union" -> Union
+  | "enum" -> Enum
   (* | "ID" -> ID *)
   | _ -> Name name
