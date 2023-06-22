@@ -11,7 +11,10 @@
   async_unix
   cohttp
   cohttp-async
-  yojson)
+  yojson
+  cmdliner
+  core_unix.command_unix
+ )
  (flags
   (:standard -w -11 -open Sexplib.Std))
  (preprocess

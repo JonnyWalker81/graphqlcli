@@ -195,6 +195,9 @@ type Foo {
   baz: Boolean
 }
 
+        foo(bar: Boolean!
+            baz: Boolean): String
+
         """This is a multi
          line string in graphQL"""
 |}
