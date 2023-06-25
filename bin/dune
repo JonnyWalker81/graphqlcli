@@ -1,6 +1,7 @@
 (executable
  (public_name graphqlcli)
  (name main)
+  (modes byte exe)
  (libraries
   graphqlcli
   fmt

@@ -1,7 +1,7 @@
 open Base
 open Core
 
-type t = { input : string; position : int; read_position : int; ch : char }
+type t = { input : string; position : int; read_position : int; ch : char; line: int}
 [@@deriving show]
 
 let null_byte = '\x00'
@@ -17,10 +17,11 @@ let read_char lexer =
     position = lexer.read_position;
     read_position = lexer.read_position + 1;
     ch = new_ch;
+    line = 1;
   }
 
 let init input =
-  let lexer = { input; position = 0; read_position = 0; ch = null_byte } in
+  let lexer = { input; position = 0; read_position = 0; ch = null_byte; line = 1} in
   read_char lexer
 
 let is_letter ch =
@@ -34,7 +35,7 @@ let is_whitespace ch =
   match ch with
   | ' ' -> true
   | '\t' -> true
-  | '\n' -> true
+  | '\n' ->  true
   | '\r' -> true
   | _ -> false
 
@@ -73,12 +74,12 @@ let read_multiline_string lexer =
     match lexer.ch with
     | '\x00' -> (read_char lexer, str)
     | _ ->
-        let lexer, is_quote_one = peek_is lexer 1 '"' in
-        let lexer, is_quote_two = peek_is lexer 2 '"' in
-        if is_quote_one && is_quote_two then (read_char lexer, str)
-        else
-          let str = str ^ Char.escaped lexer.ch in
-          loop (read_char lexer) str
+      let lexer, is_quote_one = peek_is lexer 1 '"' in
+      let lexer, is_quote_two = peek_is lexer 2 '"' in
+      if is_quote_one && is_quote_two then (read_char lexer, str)
+      else
+        let str = str ^ Char.escaped lexer.ch in
+        loop (read_char lexer) str
   in
   let lexer, s = loop lexer "" in
   (lexer, Token.StringLiteral s)
@@ -92,8 +93,8 @@ let read_string lexer =
       match lexer.ch with
       | '"' | '\x00' -> (read_char lexer, str)
       | _ ->
-          let str = str ^ Char.escaped lexer.ch in
-          loop (read_char lexer) str
+        let str = str ^ Char.escaped lexer.ch in
+        loop (read_char lexer) str
     in
     let lexer, s = loop lexer "" in
     (lexer, Token.StringLiteral s)
@@ -124,8 +125,8 @@ let next_token lexer =
   | '#' -> read_comment (read_char lexer)
   | '\x00' -> (read_char lexer, Token.Eof)
   | ch when is_letter ch ->
-      let lexer, ident = read_identifier lexer in
-      (lexer, Token.lookup_keyword ident)
+    let lexer, ident = read_identifier lexer in
+    (lexer, Token.lookup_keyword ident)
   | _ -> (read_char lexer, Token.Illegal)
 
 let tokenize input =
@@ -276,6 +277,18 @@ type Foo {
       Token.Colon
       (Token.Name "Boolean")
       Token.RightBrace
+      (Token.Name "foo")
+      Token.LeftParen
+      (Token.Name "bar")
+      Token.Colon
+      (Token.Name "Boolean")
+      Token.Exclamation
+      (Token.Name "baz")
+      Token.Colon
+      (Token.Name "Boolean")
+      Token.RightParen
+      Token.Colon
+      (Token.Name "String")
       (Token.StringLiteral "")
       (Token.StringLiteral "This is a multi\\n         line string in graphQL")
       (Token.StringLiteral "")

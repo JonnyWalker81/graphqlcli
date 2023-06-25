@@ -19,9 +19,15 @@ let chomp_semicolon parser =
 let chomp parser tok =
   match tok with
   | tok when phys_equal tok parser.peek_token ->
-      let parser = next_token parser in
       next_token parser
   | _ -> parser
+
+let chomp_comment parser =
+  match parser.peek_token with
+  | Token.Comment _ ->
+      next_token parser
+  | _ -> parser
+
 
 let expect_peek parser condition =
   match condition parser.peek_token with
@@ -44,6 +50,9 @@ let expect_peek_equal parser =
   expect_peek parser (function Token.Equal -> true | _ -> false)
 
 let peek_is parser token = phys_equal parser.peek_token token
+
+let peek_token_is_name parser =
+  match parser.peek_token with Token.Name _ -> true | _ -> false
 
 let expect_current_is parser token =
   if Token.equal parser.cur_token token then true else false
@@ -210,26 +219,30 @@ and parse_type parser =
   let parser, ok = expect_peek_left_brace parser in
   match (parser, ok) with
   | parser, true ->
-      let* parser, fields = parse_type_definition parser in
+    let* parser, fields =
+      (* let parser = next_token parser in *)
+      parse_type_definition parser in
       Ok (parser, Ast.TypeDefinition (Ast.Object { name; fields }))
   | _, false -> Error "expected left brace"
 
 and parse_type_definition parser =
+  (* let () = print_parser_state ~msg:"parsing type definition..." parser in *)
   let rec parse_type_def' parser fields =
     match parser.peek_token with
     | Token.RightBrace | Token.Eof -> Ok (parser, List.rev fields)
-    | Token.Comment _ -> parse_type_def' (next_token parser) fields
-    | _ -> (
-        let () = print_parser_state ~msg:"parse_type_definition" parser in
-        let parser =
-          if current_token_is_name parser then parser else next_token parser
-        in
+    |Token.Comment _ -> parse_type_def' (next_token parser) fields
+    |Token.Name _ | Token.Type | Token.Input -> (
+              let parser = next_token parser in
+        (* let parser = *)
+        (*   if current_token_is_name parser then parser else next_token parser *)
+        (* in *)
         let* parser, name = parse_name parser in
+  (* let () = print_parser_state ~msg:"\t parsed name" parser in *)
         (* let* parser, name = parse_name (parser) in *)
         let parser, args =
           match parser.peek_token with
           | Token.LeftParen ->
-              let parser = next_token parser in
+              (* let parser = next_token parser in *)
               let parser = next_token parser in
               let parser, args = parse_field_args parser in
               (parser, args)
@@ -238,13 +251,29 @@ and parse_type_definition parser =
 
         match parser.peek_token with
         | Token.Colon ->
+
+  (* let () = print_parser_state ~msg:"\t found colon, parsing type" parser in *)
             let parser = next_token parser in
+            let parser = next_token parser in
+            let* parser, ty = parse_graphql_type parser in
+
+  (* let () = print_parser_state ~msg:"\t parsed type" parser in *)
+            let field = Ast.{ name; args; ty } in
+            parse_type_def' parser (field :: fields)
+        | Token.Name _ ->
             let parser = next_token parser in
             let* parser, ty = parse_graphql_type parser in
 
             let field = Ast.{ name; args; ty } in
             parse_type_def' parser (field :: fields)
-        | _ -> Error "parse_type_definition: expected a name")
+        | _ -> failwith "parse_type_definition: expected a name or a colon")
+    | _ ->
+        failwith
+          (Printf.sprintf
+             "parse_type_definition: expected right brace, comment, or name: \
+              cur: %s, peek: %s"
+             (Token.show parser.cur_token)
+             (Token.show parser.peek_token))
   in
   let* parser, td = parse_type_def' parser [] in
   let parser, ok = expect_peek_right_brace parser in
@@ -255,38 +284,38 @@ and parse_type_definition parser =
 and parse_field_args parser =
   let rec parse_field_args' (parser : t) (args : Ast.argument_definition list) :
       t * Ast.argument_definition list option =
+  (* let () = print_parser_state ~msg:"parsing field args" parser  in *)
     let parser = chomp parser Token.Comma in
-    let () = print_parser_state ~msg:"after chomp: " parser in
-    match (current_token_is parser Token.RightParen, peek_is parser Token.RightParen) with
-    | true, true ->
-        let () = print_parser_state ~msg:"right param: " parser in
+    let parser = chomp_comment parser in
+  (* let () = print_parser_state ~msg:"parsing field args (after chomp)" parser  in *)
+    match
+      parser.peek_token
+    with
+    | Token.RightParen ->
+        let parser =
+          if not (current_token_is parser Token.RightParen) then
+            next_token parser
+          else parser
+        in
         (parser, Some (List.rev args))
-    | _ -> (
+    | Token.Name _ | Token.Type | Token.Input-> (
+        let parser = next_token parser in
         match parser.peek_token with
         | Token.Colon -> (
             let n = parse_name parser in
             let parser, name =
               match n with
               | Ok (parser, name) -> (parser, name)
-              | Error _ ->
-                  let () =
-                    print_parser_state ~msg:"parse_field_arg name: " parser
-                  in
-                  failwith "parse_field_arg: error parsing name"
+              | Error _ -> failwith "parse_field_arg: error parsing name"
             in
             match parser.peek_token with
             | Token.Colon ->
                 let parser = next_token parser in
                 let parser = next_token parser in
                 let ty = parse_graphql_type parser in
-                let () =
-                  print_parser_state ~msg:"after graphql type: " parser
-                in
                 let parser, gql_type =
                   match ty with
-                  | Ok (parser, gql_type) ->
-                      let () = print_parser_state ~msg:"ty: " parser in
-                      (parser, gql_type)
+                  | Ok (parser, gql_type) -> (parser, gql_type)
                   | Error _ -> failwith "error parsing graphql type"
                 in
                 let parser, arg = (parser, Ast.{ name; ty = gql_type }) in
@@ -297,48 +326,47 @@ and parse_field_args parser =
               (Printf.sprintf "expected args: cur: %s, peek: %s"
                  (Token.show parser.cur_token)
                  (Token.show parser.peek_token)))
+    | _ -> failwith (Printf.sprintf "parse_field_args: expected name - cur: %s, peek: %s" (Token.show parser.cur_token) (Token.show parser.peek_token))
   in
-  let () = print_parser_state ~msg:"parsing args: " parser in
   parse_field_args' parser []
 
 and parse_graphql_type parser =
-  let () = print_parser_state ~msg:"parsing graphql type: " parser in
   match parser.cur_token with
   | Token.LeftBracket -> (
       let parser = next_token parser in
       let* parser, gql_type = parse_graphql_type parser in
-      let () =
-        print_parser_state
-          ~msg:"parse_graphql_type...checking for right bracket" parser
-      in
       let parser, ok = expect_peek_right_bracket parser in
-      match (parser, ok || current_token_is parser Token.RightBracket) with
+      match (parser, ok) with
       | parser, true -> (
           match parser.peek_token with
           | Token.Exclamation ->
-              let () =
-                print_parser_state ~msg:"parsing graphql type (list exlamation)"
-                  parser
-              in
+              (* let parser = next_token parser in *)
+              (* let parser = next_token parser in *)
               let parser = next_token parser in
-              Ok (next_token parser, Ast.NonNullType (Ast.ListType gql_type))
-          | _ -> Ok (parser, Ast.ListType gql_type))
-      | _ -> Error "expected closing right bracket for list type")
+              Ok (parser, Ast.NonNullType (Ast.ListType gql_type))
+          | _ ->
+            (* let parser = next_token parser in *)
+            (* let parser = next_token parser in *)
+            Ok (parser, Ast.ListType gql_type))
+      | _ -> Error "parse_graphql_type: expected closing right bracket for list type")
   | Token.Name _ -> (
       let* parser, name = parse_name parser in
       match parser.peek_token with
       | Token.Exclamation ->
+          (* let parser = next_token parser in *)
           let parser = next_token parser in
-          let () =
-            print_parser_state ~msg:"parsing graphql type (exlamation) " parser
-          in
-          Ok (next_token parser, Ast.NonNullType (Ast.NamedType name))
-      | _ -> Ok (parser, Ast.NamedType name))
+
+          Ok (parser, Ast.NonNullType (Ast.NamedType name))
+      | _ ->
+          (* let parser = next_token parser in *)
+          Ok (parser, Ast.NamedType name))
   | _ -> Error "parse_graphql_type: expected a name or left bracket"
 
 and parse_name parser =
   match parser.cur_token with
   | Token.Name n -> Ok (parser, n)
+  | Token.Type -> Ok(parser, Token.to_name Token.Type) (* HACK: if type is seen where a name is expected than set name to "type" *)
+  | Token.Input -> Ok(parser, Token.to_name Token.Input) (* HACK: if type is seen where a name is expected than set name to "input" *)
   | _ ->
       Error
         (Printf.sprintf "parse_name: expected name: cur: %s, peek: %s"
@@ -370,85 +398,85 @@ module Test = struct
     | Error msg -> Fmt.failwith "error...%s" msg
   (* | Error msg -> Fmt.failwith "%a@." pp_parse_error msg *)
 
-  (* let%expect_test "testSimpleDocument" = *)
-  (*   let input = *)
-  (* {| *)
-     (*       scalar UUID *)
-     (*                type Query { *)
-     (*                   foo: String *)
-     (*                   bar: String! *)
-     (*                   baz: [String] *)
-     (*                   qux: [String]! *)
-     (*                   get: [String!]! *)
-     (*                   set: [[String!]!]! *)
-     (*                } *)
-     (*                |} *)
-  (*   in *)
-  (*   expect_document input; *)
-  (*   [%expect *)
-  (* {| *)
-     (*     Document: [ *)
-     (*         (Scalar "UUID") *)
+  let%expect_test "testSimpleDocument" =
+    let input =
+      {|
+           scalar UUID
+                    type Query {
+                       foo: String
+                       bar: String!
+                       baz: [String]
+                       qux: [String]!
+                       get: [String!]!
+                       set: [[String!]!]!
+                    }
+                    |}
+    in
+    expect_document input;
+    [%expect
+      {|
+         Document: [
+             (Scalar "UUID")
 
-     (*         (Object *)
-     (*        { name = "Query"; *)
-     (*          fields = *)
-     (*          [{ name = "foo"; args = None; ty = (NamedType "String") }; *)
-     (*            { name = "bar"; args = None; ty = (NonNullType (NamedType "String")) }; *)
-     (*            { name = "baz"; args = None; ty = (ListType (NamedType "String")) }; *)
-     (*            { name = "qux"; args = None; *)
-     (*              ty = (NonNullType (ListType (NamedType "String"))) }; *)
-     (*            { name = "get"; args = None; *)
-     (*              ty = (NonNullType (ListType (NonNullType (NamedType "String")))) }; *)
-     (*            { name = "set"; args = None; *)
-     (*              ty = *)
-     (*              (NonNullType *)
-     (*                 (ListType *)
-     (*                    (NonNullType (ListType (NonNullType (NamedType "String")))))) *)
-     (*              } *)
-     (*            ] *)
-     (*          }) *)
+             (Object
+            { name = "Query";
+              fields =
+              [{ name = "foo"; args = None; ty = (NamedType "String") };
+                { name = "bar"; args = None; ty = (NonNullType (NamedType "String")) };
+                { name = "baz"; args = None; ty = (ListType (NamedType "String")) };
+                { name = "qux"; args = None;
+                  ty = (NonNullType (ListType (NamedType "String"))) };
+                { name = "get"; args = None;
+                  ty = (NonNullType (ListType (NonNullType (NamedType "String")))) };
+                { name = "set"; args = None;
+                  ty =
+                  (NonNullType
+                     (ListType
+                        (NonNullType (ListType (NonNullType (NamedType "String"))))))
+                  }
+                ]
+              })
 
-     (*     ] *)
+         ]
 
-     (*             |}] *)
+                 |}]
 
-  (* let%expect_test "testDocumentSchema" = *)
-  (*   let input = *)
-  (* {| *)
-     (*                schema { *)
-     (*                  query: MyQuery *)
-     (*                  mutation: MyMutation *)
-     (*                } *)
+  let%expect_test "testDocumentSchema" =
+    let input =
+      {|
+                    schema {
+                      query: MyQuery
+                      mutation: MyMutation
+                    }
 
-     (*          scalar Status *)
-     (*                |} *)
-  (*   in *)
-  (*   expect_document input; *)
-  (*   [%expect *)
-  (* {| *)
-     (*     mutation -> MyMutation *)
-     (*     query -> MyQuery *)
-     (*     Document: [ *)
-     (*         { query = (Some { name = "MyQuery" }); *)
-     (*       mutation = (Some { name = "MyMutation" }); subscription = None } *)
+              scalar Status
+                    |}
+    in
+    expect_document input;
+    [%expect
+      {|
+         mutation -> MyMutation
+         query -> MyQuery
+         Document: [
+             { query = (Some { name = "MyQuery" });
+           mutation = (Some { name = "MyMutation" }); subscription = None }
 
-     (*         (Scalar "Status") *)
+             (Scalar "Status")
 
-     (*     ] *)
+         ]
 
-     (*             |}] *)
+                 |}]
 
   let%expect_test "testFieldWithArgs" =
     let input =
       {|
          scalar UUID
                   type Query {
-                     foo(arg1: Int, arg2: Boolean!): String
+                     fooQuery(arg1: Int, arg2: Boolean!): String
                   }
 
         type Mutation {
-        foo(fooArg1: String, fooArg2: Int!): [String!]!
+        fooMut(fooArg1: String, fooArg2: Int!): [String!]!
         bar(barArg1: Boolean!
             barArg2: Boolean): [String!]!
 }
@@ -463,8 +491,10 @@ module Test = struct
           (Object
          { name = "Query";
            fields =
-           [{ name = "foo";
-              args = (Some [{ name = "bar"; ty = (NamedType "Int") }]);
+           [{ name = "fooQuery";
+              args =
+              (Some [{ name = "arg1"; ty = (NamedType "Int") };
+                      { name = "arg2"; ty = (NonNullType (NamedType "Boolean")) }]);
               ty = (NamedType "String") }
              ]
            })
@@ -472,106 +502,181 @@ module Test = struct
           (Object
          { name = "Mutation";
            fields =
-           [{ name = "foo";
+           [{ name = "fooMut";
               args =
-              (Some [{ name = "one"; ty = (NamedType "String") };
-                      { name = "two"; ty = (NamedType "Int") }]);
-              ty = (NonNullType (ListType (NonNullType (NamedType "String")))) }
+              (Some [{ name = "fooArg1"; ty = (NamedType "String") };
+                      { name = "fooArg2"; ty = (NonNullType (NamedType "Int")) }]);
+              ty = (NonNullType (ListType (NonNullType (NamedType "String")))) };
+             { name = "bar";
+               args =
+               (Some [{ name = "barArg1"; ty = (NonNullType (NamedType "Boolean"))
+                        };
+                       { name = "barArg2"; ty = (NamedType "Boolean") }]);
+               ty = (NonNullType (ListType (NonNullType (NamedType "String")))) }
              ]
            })
 
       ] |}]
 
-  (* let%expect_test "testUnion" = *)
-  (* let input = {| *)
-     (*        union foo = Bar | Foobar *)
-     (*                 |} in *)
-  (*   expect_document input; *)
-  (*   [%expect *)
-  (* {| *)
-     (*     Document: [ *)
-     (*         (Union { name = "foo"; members = ["Bar"; "Foobar"] }) *)
+  let%expect_test "testUnion" =
+    let input =
+      {|
+            union foo = Bar | Foobar
+                     |}
+    in
+    expect_document input;
+    [%expect
+      {|
+         Document: [
+             (Union { name = "foo"; members = ["Bar"; "Foobar"] })
 
-     (*     ] |}] *)
+         ] |}]
 
-  (*   let%expect_test "testEnum" = *)
-  (*     let input = *)
-  (* {| *)
-     (*         enum Foo { *)
-     (*           BAR *)
-     (*           FOOBAR *)
-     (*           BAZ *)
-     (*         } *)
-     (*                   |} *)
-  (*     in *)
-  (*     expect_document input; *)
-  (*     [%expect *)
-  (* {| *)
-     (*       Document: [ *)
-     (*           (Enum { name = "Foo"; values = ["BAR"; "FOOBAR"; "BAZ"] }) *)
+  let%expect_test "testEnum" =
+    let input =
+      {|
+             enum Foo {
+               BAR
+               FOOBAR
+               BAZ
+             }
+                       |}
+    in
+    expect_document input;
+    [%expect
+      {|
+           Document: [
+               (Enum { name = "Foo"; values = ["BAR"; "FOOBAR"; "BAZ"] })
 
-     (*       ] |}] *)
+           ] |}]
 
-  (*   let%expect_test "testComments" = *)
-  (* let input = {| *)
-     (*          scalar Cost #cost type *)
-     (*          #this is a top-level comment *)
-     (*          union bar = Bar | Foobar | Qux #this is a comment at the end of a line *)
+  let%expect_test "testComments" =
+    let input =
+      {|
+              scalar Cost #cost type
+              #this is a top-level comment
+              union bar = Bar | Foobar | Qux #this is a comment at the end of a line
 
-     (*          enum Kind { *)
-     (*            NORTH *)
-     (*            SOUTH # enum comment *)
-     (*            EAST *)
-     (*            WEST *)
-     (* } *)
+              enum Kind {
+                NORTH
+                SOUTH # enum comment
+                EAST
+                WEST
+     }
 
-     (*          type Mutation { *)
-     (*       foo: String #query foo field *)
-     (* } *)
-     (*                   |} in *)
-  (*     expect_document input; *)
-  (*     [%expect *)
-  (* {| *)
-     (*       Document: [ *)
-     (*           (Scalar "Cost") *)
+              type Mutation {
+           foo: String #query foo field
+     }
+                       |}
+    in
+    expect_document input;
+    [%expect
+      {|
+           Document: [
+               (Scalar "Cost")
 
-     (*           (Comment "cost type") *)
+               (Comment "cost type")
 
-     (*           (Comment "this is a top-level comment") *)
+               (Comment "this is a top-level comment")
 
-     (*           (Union { name = "bar"; members = ["Bar"; "Foobar"; "Qux"] }) *)
+               (Union { name = "bar"; members = ["Bar"; "Foobar"; "Qux"] })
 
-     (*           (Enum { name = "Kind"; values = ["NORTH"; "SOUTH"; "EAST"; "WEST"] }) *)
+               (Enum { name = "Kind"; values = ["NORTH"; "SOUTH"; "EAST"; "WEST"] })
 
-     (*           (Object *)
-     (*          { name = "Mutation"; *)
-     (*            fields = [{ name = "foo"; args = None; ty = (NamedType "String") }] }) *)
+               (Object
+              { name = "Mutation";
+                fields = [{ name = "foo"; args = None; ty = (NamedType "String") }] })
 
-     (*       ] |}] *)
+           ] |}]
 
-  (* let%expect_test "testInputType" = *)
-  (* let input = {| *)
-     (*          input QueryInput { *)
-     (*       category: String *)
-     (*       name: String! *)
-     (*       labels: [String!] *)
-     (* } *)
-     (*                   |} in *)
-  (*     expect_document input; *)
-  (*     [%expect *)
-  (* {| *)
+  let%expect_test "testInputType" =
+    let input =
+      {|
+              input QueryInput {
+           category: String
+           name: String!
+           labels: [String!]
+     }
+                       |}
+    in
+    expect_document input;
+    [%expect
+      {|
 
-     (*       Document: [ *)
-     (*           (Input *)
-     (*          { name = "QueryInput"; *)
-     (*            fields = *)
-     (*            [{ name = "category"; args = None; ty = (NamedType "String") }; *)
-     (*              { name = "name"; args = None; ty = (NonNullType (NamedType "String")) *)
-     (*                }; *)
-     (*              { name = "labels"; args = None; *)
-     (*                ty = (ListType (NonNullType (NamedType "String"))) } *)
-     (*              ] *)
-     (*            }) *)
+           Document: [
+               (Input
+              { name = "QueryInput";
+                fields =
+                [{ name = "category"; args = None; ty = (NamedType "String") };
+                  { name = "name"; args = None; ty = (NonNullType (NamedType "String"))
+                    };
+                  { name = "labels"; args = None;
+                    ty = (ListType (NonNullType (NamedType "String"))) }
+                  ]
+                })
 
-     (*       ] |}] *)
+           ] |}]
+
+    let%expect_test "testArgsWithComment" =
+    let input =
+      {|
+              type Query {
+           category(id: UUID #comment
+                    name: String
+           ): String
+           name: String!
+           labels: [String!]
+     }
+                       |}
+    in
+    expect_document input;
+    [%expect
+      {|
+
+           Document: [
+               (Object
+              { name = "Query";
+                fields =
+                [{ name = "category";
+                   args =
+                   (Some [{ name = "id"; ty = (NamedType "UUID") };
+                           { name = "name"; ty = (NamedType "String") }]);
+                   ty = (NamedType "String") };
+                  { name = "name"; args = None; ty = (NonNullType (NamedType "String"))
+                    };
+                  { name = "labels"; args = None;
+                    ty = (ListType (NonNullType (NamedType "String"))) }
+                  ]
+                })
+
+           ] |}]
+
+let%expect_test "testTypeUsedAsArgName" =
+    let input =
+      {|
+              type Query {
+           category(name: String!
+                    type: String
+           ): String
+     }
+                       |}
+    in
+    expect_document input;
+    [%expect
+      {|
+
+           Document: [
+               (Object
+              { name = "Query";
+                fields =
+                [{ name = "category";
+                   args =
+                   (Some [{ name = "name"; ty = (NonNullType (NamedType "String")) };
+                           { name = "type"; ty = (NamedType "String") }]);
+                   ty = (NamedType "String") }
+                  ]
+                })
+
+           ] |}]
+
 end
