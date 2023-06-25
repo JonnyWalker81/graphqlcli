@@ -11,6 +11,16 @@ let next_token parser =
   let lexer, peek = Lexer.next_token parser.lexer in
   { lexer; cur_token = parser.peek_token; peek_token = peek }
 
+let init lexer =
+  let parser =
+    { lexer; cur_token = Token.Illegal; peek_token = Token.Illegal }
+  in
+  let parser = next_token parser in
+  let parser = next_token parser in
+  parser
+
+let line parser = parser.lexer.line
+
 let chomp_semicolon parser =
   match parser.peek_token with
   | Token.Semicolon -> next_token parser
@@ -67,13 +77,8 @@ let print_parser_state ?(msg = "parser: ") parser =
     (Token.show parser.cur_token)
     (Token.show parser.peek_token)
 
-let init lexer =
-  let parser =
-    { lexer; cur_token = Token.Illegal; peek_token = Token.Illegal }
-  in
-  let parser = next_token parser in
-  let parser = next_token parser in
-  parser
+let failwith_parser_error parser msg =
+  failwith (Printf.sprintf "Parser Error (line: %d): %s" (line parser) msg)
 
 let rec parse parser =
   let rec parse' parser definitions =
@@ -82,7 +87,7 @@ let rec parse parser =
     | _ -> (
         match parse_definition parser with
         | Ok (parser, s) -> parse' (next_token parser) (s :: definitions)
-        | Error err -> failwith (Printf.sprintf "parse error: %s" err))
+        | Error err -> failwith_parser_error parser err)
   in
   let _, definitions = parse' parser [] in
   Ok (Ast.Document definitions)
@@ -97,10 +102,58 @@ and parse_definition parser =
   | Token.Input -> parse_input_type (next_token parser)
   | Token.Comment comment ->
       Ok (parser, Ast.TypeDefinition (Ast.Comment comment))
+  | Token.Query | Token.Mutation
+  | Token.Name "query"
+  | Token.Name "mutation"
+  | Token.LeftBrace ->
+      parse_executable_document parser
   | _ ->
       failwith
         (Printf.sprintf "unexpected definition: %s"
            (Token.show parser.cur_token))
+
+and parse_executable_document parser =
+  match parser.cur_token with
+  | Token.LeftBrace -> failwith_parser_error parser "unnamed query is not supported"
+  | Token.Name "query" ->
+    parse_query parser
+  | Token.Name "mutation" ->
+    parse_mutation parser
+  | _ -> failwith_parser_error parser "expected query or mutation"
+
+and parse_query parser =
+    let parser = next_token parser in
+  let* parser, name = parse_name parser in
+    let* parser, vars = match parser.peek_token with
+      | Token.LeftParen -> parse_variables parser
+      | _ -> Ok(parser, None)  in
+    let parser, ok = expect_peek_left_brace parser in
+    match (parser, ok) with
+    | parser, true -> (
+        let parser = next_token parser in
+        let* parser, name = parse_name  parser in
+        let* parser, args = match parser.peek_token with
+        | Token.LeftParen -> parse_args parser
+        | _ -> Ok(parser, None) in
+        let parser, ok = expect_peek_left_brace parser in
+        match (parser, ok) with
+        | parser, true -> parse_selection_set parser
+        | _ -> failwith_parser_error parser "parse_query: expected left brace for selection set"
+      )
+    | _ -> failwith_parser_error parser "parse_query: expected left brace"
+
+and parse_selection_set parser =
+  (parser, [])
+
+and parse_args parser =
+  Ok(parser, None)
+
+and parse_variables parser =
+    Ok(parser, None)
+
+and parse_mutation parser =
+    let _parser = next_token parser in
+  failwith "parse_mutation"
 
 and parse_input_type parser =
   let* parser, name = parse_name parser in
@@ -354,6 +407,18 @@ and parse_name parser =
         (Printf.sprintf "parse_name: expected name: cur: %s, peek: %s"
            (Token.show parser.cur_token)
            (Token.show parser.peek_token))
+
+let parse_document input =
+  let lexer = Lexer.init input in
+  let parser = init lexer in
+  let document = parse parser in
+  document
+
+(* let parse_executable_document input = *)
+(*   let lexer = Lexer.init input in *)
+(*   let parser = init lexer in *)
+(*   let document = parse parser in *)
+(*   document *)
 
 let show_type_definition = Ast.show_type_definition
 
@@ -658,4 +723,16 @@ module Test = struct
                 })
 
            ] |}]
+
+  let%expect_test "testSimpleQueryExecDoc" =
+    let input = {|
+query foo{
+  field
+}
+
+|} in
+    expect_document input;
+    [%expect {|
+
+|}]
 end

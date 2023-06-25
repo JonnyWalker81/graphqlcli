@@ -1,14 +1,9 @@
 open Core
 open Graphqlcli
 
-let do_hash file =
-  Md5.digest_file_blocking file |> Md5.to_hex |> print_endline
-
 let parse file =
   let contents = In_channel.read_all file in
-  let lexer = Lexer.init contents in
-  let parser = Parser.init lexer in
-  let document = Parser.parse parser in
+  let document = Parser.parse_document contents in
   match document with
   | Ok _ ->
     Printf.printf "parsed document"

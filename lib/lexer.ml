@@ -17,12 +17,23 @@ let read_char lexer =
     position = lexer.read_position;
     read_position = lexer.read_position + 1;
     ch = new_ch;
-    line = 1;
+    line = lexer.line;
   }
 
 let init input =
   let lexer = { input; position = 0; read_position = 0; ch = null_byte; line = 1} in
   read_char lexer
+
+let increment_line lexer =
+  let lexer = {
+    input = lexer.input;
+    position = lexer.position;
+    read_position = lexer.read_position;
+    ch = lexer.ch;
+    line = lexer.line + 1
+  }
+  in
+  lexer
 
 let is_letter ch =
   match ch with
@@ -31,13 +42,14 @@ let is_letter ch =
   | '_' -> true
   | _ -> false
 
-let is_whitespace ch =
-  match ch with
-  | ' ' -> true
-  | '\t' -> true
-  | '\n' ->  true
-  | '\r' -> true
-  | _ -> false
+let is_whitespace lexer =
+  match lexer.ch with
+  | ' ' -> (lexer, true)
+  | '\t' -> (lexer, true)
+  | '\n' -> let lexer = increment_line lexer in
+    (lexer, true)
+  | '\r' -> (lexer, true)
+  | _ -> (lexer, false)
 
 let is_digit ch = match ch with '0' .. '9' -> true | _ -> false
 let is_letter_or_digit ch = is_letter ch || is_digit ch
@@ -51,7 +63,8 @@ let read_identifier lexer = read_while is_letter_or_digit lexer ""
 let read_number lexer = read_while is_digit lexer ""
 
 let rec skip_while condition lexer =
-  if condition lexer.ch then skip_while condition (read_char lexer) else lexer
+  let lexer, cond = condition lexer in
+  if cond then skip_while condition (read_char lexer) else lexer
 
 let peek lexer ch current matched =
   if lexer.read_position >= String.length lexer.input then (lexer, Token.Eof)
@@ -106,7 +119,7 @@ let read_comment lexer =
   (lexer, Token.Comment comment)
 
 let next_token lexer =
-  let lexer = skip_while is_whitespace lexer in
+  let lexer = skip_while is_whitespace  lexer in
   let ch = lexer.ch in
   match ch with
   | '{' -> (read_char lexer, Token.LeftBrace)
@@ -133,7 +146,7 @@ let tokenize input =
   let lexer = init input in
   let rec tokenize' lexer tokens =
     match next_token lexer with
-    | _, Token.Eof -> List.rev_append tokens [ Token.Eof ]
+    | _, Token.Eof -> (lexer, List.rev_append tokens [ Token.Eof ])
     | lexer, token -> tokenize' lexer (token :: tokens)
   in
   tokenize' lexer []
@@ -143,9 +156,12 @@ module Test = struct
     List.iter tokens ~f:(fun token -> Fmt.pr "%s\n" @@ Token.show token)
 
   let%expect_test "testNextToken" =
-    let input = {|=(){},;;|} in
-    let tokens = tokenize input in
+    let input = {|=(){},
+                 ;
+                 ;|} in
+    let lexer, tokens = tokenize input in
     print_tokens tokens;
+    Printf.printf "Line Numbers: %d" lexer.line;
     [%expect
       {|
       Token.Equal
@@ -157,6 +173,7 @@ module Test = struct
       Token.Semicolon
       Token.Semicolon
       Token.Eof
+      Line Numbers: 3
 |}]
 
   let%expect_test "testTokenize" =
@@ -203,8 +220,9 @@ type Foo {
          line string in graphQL"""
 |}
     in
-    let tokens = tokenize input in
+    let lexer, tokens = tokenize input in
     print_tokens tokens;
+    Printf.printf "Line Numbers: %d" lexer.line;
     [%expect
       {|
       Token.Schema
@@ -293,5 +311,6 @@ type Foo {
       (Token.StringLiteral "This is a multi\\n         line string in graphQL")
       (Token.StringLiteral "")
       Token.Eof
+      Line Numbers: 39
 |}]
 end

@@ -30,7 +30,24 @@ type union_type = { name : string; members : string list }
 type enum_type = { name : string; values : string list }
 [@@deriving show { with_path = false }, sexp]
 
-type input_type = { name : string; fields: field list }
+type input_type = { name : string; fields : field list }
+[@@deriving show { with_path = false }, sexp]
+
+type object_field = { name : string; value : object_type }
+[@@deriving show { with_path = false }, sexp]
+
+and object_field_type =
+  | String of string
+  | Int of int
+  | Float of float
+  | Boolean of bool
+  | Null
+  | Enum of string
+  | List of object_type list
+  | Object of object_field list
+[@@deriving show { with_path = false }, sexp]
+
+type operation_arg = { name : string; value : object_field_type }
 [@@deriving show { with_path = false }, sexp]
 
 type type_definition =
@@ -42,6 +59,9 @@ type type_definition =
   | Comment of string
 [@@deriving show { with_path = false }, sexp]
 
+(* type variable_definition = { name : string; ty : graphql_type} *)
+(* [@@deriving show { with_path = false }, sexp] *)
+
 type operation_type = { name : string }
 [@@deriving show { with_path = false }, sexp]
 
@@ -52,7 +72,21 @@ type schema = {
 }
 [@@deriving show { with_path = false }, sexp]
 
-type definition = TypeDefinition of type_definition | Schema of schema
+type operation = Query | Mutation | Subscription
+[@@deriving show { with_path = false }, sexp]
+
+type executable_definition = {
+  name : string;
+  operation : operation;
+  args : operation_arg list option;
+  variables : argument_definition list option;
+}
+[@@deriving show { with_path = false }, sexp]
+
+type definition =
+  | TypeDefinition of type_definition
+  | Schema of schema
+  | ExecutableDefinition of executable_definition
 [@@deriving show { with_path = false }, sexp]
 
 type node = Document of definition list
