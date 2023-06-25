@@ -18,16 +18,13 @@ let chomp_semicolon parser =
 
 let chomp parser tok =
   match tok with
-  | tok when phys_equal tok parser.peek_token ->
-      next_token parser
+  | tok when phys_equal tok parser.peek_token -> next_token parser
   | _ -> parser
 
 let chomp_comment parser =
   match parser.peek_token with
-  | Token.Comment _ ->
-      next_token parser
+  | Token.Comment _ -> next_token parser
   | _ -> parser
-
 
 let expect_peek parser condition =
   match condition parser.peek_token with
@@ -219,30 +216,21 @@ and parse_type parser =
   let parser, ok = expect_peek_left_brace parser in
   match (parser, ok) with
   | parser, true ->
-    let* parser, fields =
-      (* let parser = next_token parser in *)
-      parse_type_definition parser in
+      let* parser, fields = parse_type_definition parser in
       Ok (parser, Ast.TypeDefinition (Ast.Object { name; fields }))
   | _, false -> Error "expected left brace"
 
 and parse_type_definition parser =
-  (* let () = print_parser_state ~msg:"parsing type definition..." parser in *)
   let rec parse_type_def' parser fields =
     match parser.peek_token with
     | Token.RightBrace | Token.Eof -> Ok (parser, List.rev fields)
-    |Token.Comment _ -> parse_type_def' (next_token parser) fields
-    |Token.Name _ | Token.Type | Token.Input -> (
-              let parser = next_token parser in
-        (* let parser = *)
-        (*   if current_token_is_name parser then parser else next_token parser *)
-        (* in *)
+    | Token.Comment _ -> parse_type_def' (next_token parser) fields
+    | Token.Name _ | Token.Type | Token.Input -> (
+        let parser = next_token parser in
         let* parser, name = parse_name parser in
-  (* let () = print_parser_state ~msg:"\t parsed name" parser in *)
-        (* let* parser, name = parse_name (parser) in *)
         let parser, args =
           match parser.peek_token with
           | Token.LeftParen ->
-              (* let parser = next_token parser in *)
               let parser = next_token parser in
               let parser, args = parse_field_args parser in
               (parser, args)
@@ -251,13 +239,9 @@ and parse_type_definition parser =
 
         match parser.peek_token with
         | Token.Colon ->
-
-  (* let () = print_parser_state ~msg:"\t found colon, parsing type" parser in *)
             let parser = next_token parser in
             let parser = next_token parser in
             let* parser, ty = parse_graphql_type parser in
-
-  (* let () = print_parser_state ~msg:"\t parsed type" parser in *)
             let field = Ast.{ name; args; ty } in
             parse_type_def' parser (field :: fields)
         | Token.Name _ ->
@@ -284,13 +268,9 @@ and parse_type_definition parser =
 and parse_field_args parser =
   let rec parse_field_args' (parser : t) (args : Ast.argument_definition list) :
       t * Ast.argument_definition list option =
-  (* let () = print_parser_state ~msg:"parsing field args" parser  in *)
     let parser = chomp parser Token.Comma in
     let parser = chomp_comment parser in
-  (* let () = print_parser_state ~msg:"parsing field args (after chomp)" parser  in *)
-    match
-      parser.peek_token
-    with
+    match parser.peek_token with
     | Token.RightParen ->
         let parser =
           if not (current_token_is parser Token.RightParen) then
@@ -298,7 +278,7 @@ and parse_field_args parser =
           else parser
         in
         (parser, Some (List.rev args))
-    | Token.Name _ | Token.Type | Token.Input-> (
+    | Token.Name _ | Token.Type | Token.Input -> (
         let parser = next_token parser in
         match parser.peek_token with
         | Token.Colon -> (
@@ -326,7 +306,11 @@ and parse_field_args parser =
               (Printf.sprintf "expected args: cur: %s, peek: %s"
                  (Token.show parser.cur_token)
                  (Token.show parser.peek_token)))
-    | _ -> failwith (Printf.sprintf "parse_field_args: expected name - cur: %s, peek: %s" (Token.show parser.cur_token) (Token.show parser.peek_token))
+    | _ ->
+        failwith
+          (Printf.sprintf "parse_field_args: expected name - cur: %s, peek: %s"
+             (Token.show parser.cur_token)
+             (Token.show parser.peek_token))
   in
   parse_field_args' parser []
 
@@ -340,33 +324,31 @@ and parse_graphql_type parser =
       | parser, true -> (
           match parser.peek_token with
           | Token.Exclamation ->
-              (* let parser = next_token parser in *)
-              (* let parser = next_token parser in *)
               let parser = next_token parser in
               Ok (parser, Ast.NonNullType (Ast.ListType gql_type))
-          | _ ->
-            (* let parser = next_token parser in *)
-            (* let parser = next_token parser in *)
-            Ok (parser, Ast.ListType gql_type))
-      | _ -> Error "parse_graphql_type: expected closing right bracket for list type")
+          | _ -> Ok (parser, Ast.ListType gql_type))
+      | _ ->
+          Error
+            "parse_graphql_type: expected closing right bracket for list type")
   | Token.Name _ -> (
       let* parser, name = parse_name parser in
       match parser.peek_token with
       | Token.Exclamation ->
-          (* let parser = next_token parser in *)
           let parser = next_token parser in
 
           Ok (parser, Ast.NonNullType (Ast.NamedType name))
-      | _ ->
-          (* let parser = next_token parser in *)
-          Ok (parser, Ast.NamedType name))
+      | _ -> Ok (parser, Ast.NamedType name))
   | _ -> Error "parse_graphql_type: expected a name or left bracket"
 
 and parse_name parser =
   match parser.cur_token with
   | Token.Name n -> Ok (parser, n)
-  | Token.Type -> Ok(parser, Token.to_name Token.Type) (* HACK: if type is seen where a name is expected than set name to "type" *)
-  | Token.Input -> Ok(parser, Token.to_name Token.Input) (* HACK: if type is seen where a name is expected than set name to "input" *)
+  | Token.Type ->
+      Ok (parser, Token.to_name Token.Type)
+      (* HACK: if type is seen where a name is expected than set name to "type" *)
+  | Token.Input ->
+      Ok (parser, Token.to_name Token.Input)
+      (* HACK: if type is seen where a name is expected than set name to "input" *)
   | _ ->
       Error
         (Printf.sprintf "parse_name: expected name: cur: %s, peek: %s"
@@ -378,8 +360,6 @@ let show_type_definition = Ast.show_type_definition
 let string_of_definition = function
   | Ast.TypeDefinition def -> Fmt.str "  %s@." (show_type_definition def)
   | Ast.Schema s -> Fmt.str "  %s@." (Ast.show_schema s)
-
-(* let string_of_ident ident = Ast.(ident.identifier) *)
 
 let print_node = function
   | Ast.Document document ->
@@ -617,7 +597,7 @@ module Test = struct
 
            ] |}]
 
-    let%expect_test "testArgsWithComment" =
+  let%expect_test "testArgsWithComment" =
     let input =
       {|
               type Query {
@@ -651,11 +631,11 @@ module Test = struct
 
            ] |}]
 
-let%expect_test "testTypeUsedAsArgName" =
+  let%expect_test "testTypeUsedAsArgName" =
     let input =
       {|
               type Query {
-           category(name: String!
+           category(input: String!
                     type: String
            ): String
      }
@@ -671,12 +651,11 @@ let%expect_test "testTypeUsedAsArgName" =
                 fields =
                 [{ name = "category";
                    args =
-                   (Some [{ name = "name"; ty = (NonNullType (NamedType "String")) };
+                   (Some [{ name = "input"; ty = (NonNullType (NamedType "String")) };
                            { name = "type"; ty = (NamedType "String") }]);
                    ty = (NamedType "String") }
                   ]
                 })
 
            ] |}]
-
 end
