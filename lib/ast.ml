@@ -47,7 +47,8 @@ and object_field_type =
   | Object of object_field list
 [@@deriving show { with_path = false }, sexp]
 
-type operation_arg = { name : string; value : object_field_type }
+(* type operation_arg = { name : string; value : object_field_type } *)
+type operation_arg = { name : string; value : string }
 [@@deriving show { with_path = false }, sexp]
 
 type type_definition =
@@ -75,11 +76,28 @@ type schema = {
 type operation = Query | Mutation | Subscription
 [@@deriving show { with_path = false }, sexp]
 
+type sub_field = {
+  name: string;
+  fields: selection_field list
+}
+[@@deriving show { with_path = false }, sexp]
+
+and selection_field =
+  | Field of string
+  | SubField of sub_field
+[@@deriving show { with_path = false }, sexp]
+
+(* and selection_set = { *)
+(*   set: selection_field list *)
+(* } *)
+(* [@@deriving show { with_path = false }, sexp] *)
+
 type executable_definition = {
   name : string;
   operation : operation;
   args : operation_arg list option;
   variables : argument_definition list option;
+  selection: selection_field list
 }
 [@@deriving show { with_path = false }, sexp]
 

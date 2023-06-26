@@ -78,7 +78,11 @@ let print_parser_state ?(msg = "parser: ") parser =
     (Token.show parser.peek_token)
 
 let failwith_parser_error parser msg =
-  failwith (Printf.sprintf "Parser Error (line: %d): %s" (line parser) msg)
+  failwith
+    (Printf.sprintf "Parser Error (line: %d): %s -- cur: %s, peek: %s"
+       (line parser) msg
+       (Token.show parser.cur_token)
+       (Token.show parser.peek_token))
 
 let rec parse parser =
   let rec parse' parser definitions =
@@ -114,45 +118,134 @@ and parse_definition parser =
 
 and parse_executable_document parser =
   match parser.cur_token with
-  | Token.LeftBrace -> failwith_parser_error parser "unnamed query is not supported"
-  | Token.Name "query" ->
-    parse_query parser
-  | Token.Name "mutation" ->
-    parse_mutation parser
+  | Token.LeftBrace ->
+      failwith_parser_error parser "unnamed query is not supported"
+  | Token.Name "query" -> parse_query parser
+  | Token.Name "mutation" -> parse_mutation parser
   | _ -> failwith_parser_error parser "expected query or mutation"
 
 and parse_query parser =
-    let parser = next_token parser in
-  let* parser, name = parse_name parser in
-    let* parser, vars = match parser.peek_token with
-      | Token.LeftParen -> parse_variables parser
-      | _ -> Ok(parser, None)  in
-    let parser, ok = expect_peek_left_brace parser in
-    match (parser, ok) with
-    | parser, true -> (
+  let parser = next_token parser in
+  let* parser, _name = parse_name parser in
+  let* parser, vars =
+    match parser.peek_token with
+    | Token.LeftParen ->
+        let* parser, vars = parse_variables parser in
         let parser = next_token parser in
-        let* parser, name = parse_name  parser in
-        let* parser, args = match parser.peek_token with
-        | Token.LeftParen -> parse_args parser
-        | _ -> Ok(parser, None) in
-        let parser, ok = expect_peek_left_brace parser in
+        Ok (parser, vars)
+    | _ -> Ok (parser, None)
+  in
+  let parser, ok = expect_peek_left_brace parser in
+  match (parser, ok) with
+  | parser, true -> (
+      let parser = next_token parser in
+      let* parser, operation = parse_name parser in
+      let* parser, args, operation =
+        match parser.peek_token with
+        | Token.LeftParen ->
+            (* let parser = next_token parser in *)
+            let* parser, args = parse_args parser in
+            Ok (parser, args, operation)
+        | _ -> Ok (parser, None, _name)
+      in
+      let parser, ok = expect_peek_left_brace parser in
+      let* parser, selection =
         match (parser, ok) with
         | parser, true -> parse_selection_set parser
-        | _ -> failwith_parser_error parser "parse_query: expected left brace for selection set"
-      )
-    | _ -> failwith_parser_error parser "parse_query: expected left brace"
+        | _ ->
+            failwith_parser_error parser
+              "parse_query: expected left brace for section"
+      in
+      let parser, ok = expect_peek_right_brace parser in
+      match ok with
+      | false ->
+          failwith_parser_error parser
+            "expected closing right brace for selection set"
+      | true -> (
+          let parser, ok = expect_peek_right_brace parser in
+          match ok with
+          | false ->
+              failwith_parser_error parser
+                "expected closing right brace for query"
+          | true ->
+              Ok
+                ( parser,
+                  Ast.ExecutableDefinition
+                    Ast.
+                      {
+                        name = operation;
+                        operation = Ast.Query;
+                        args;
+                        variables = vars;
+                        selection;
+                      } )))
+  | _ -> failwith_parser_error parser "parse_query: expected left brace"
 
 and parse_selection_set parser =
-  (parser, [])
+  let rec parse_selection_set' parser set =
+    match parser.peek_token with
+    | Token.Name _ ->
+        let parser = next_token parser in
+        let* parser, name = parse_name parser in
+        let ss = Ast.Field name in
+        parse_selection_set' parser (ss :: set)
+    | _ -> Ok (parser, set)
+  in
+  parse_selection_set' parser []
 
 and parse_args parser =
-  Ok(parser, None)
+  let parser = next_token parser in
+  let parser = next_token parser in
+  let rec parse_args' parser args =
+    let parser = chomp parser Token.Comma in
+    match parser.peek_token with
+    | Token.Colon -> (
+        let* parser, name = parse_name parser in
+        let parser, ok = expect_peek_colon parser in
+        match (parser, ok) with
+        | parser, true ->
+            let parser = next_token parser in
+
+            let* parser, var_name = parse_name parser in
+            let arg = Ast.{ name; value = var_name } in
+            parse_args' parser (arg :: args)
+        | _ ->
+            failwith_parser_error parser
+              "parse_args: expected colon after var name")
+    | Token.RightParen ->
+        let parser = next_token parser in
+        Ok (parser, Some args)
+    | _ -> failwith_parser_error parser "parse_args: peek should be a colon"
+  in
+  parse_args' parser []
 
 and parse_variables parser =
-    Ok(parser, None)
+  let parser = next_token parser in
+  let parser = next_token parser in
+  let rec parse_variables' parser vars =
+    let parser = chomp parser Token.Comma in
+    match parser.peek_token with
+    | Token.Colon -> (
+        let* parser, name = parse_name parser in
+        let parser, ok = expect_peek_colon parser in
+        match (parser, ok) with
+        | parser, true ->
+            let parser = next_token parser in
+
+            let* parser, gql_type = parse_graphql_type parser in
+            let var = Ast.{ name; ty = gql_type } in
+            parse_variables' parser (var :: vars)
+        | _ ->
+            failwith_parser_error parser
+              "parse_variables: expected colon after var name")
+    | Token.RightParen -> Ok (parser, Some vars)
+    | _ ->
+        failwith_parser_error parser "parse_varialbes: peek should be a colon"
+  in
+  parse_variables' parser []
 
 and parse_mutation parser =
-    let _parser = next_token parser in
+  let _parser = next_token parser in
   failwith "parse_mutation"
 
 and parse_input_type parser =
@@ -425,6 +518,8 @@ let show_type_definition = Ast.show_type_definition
 let string_of_definition = function
   | Ast.TypeDefinition def -> Fmt.str "  %s@." (show_type_definition def)
   | Ast.Schema s -> Fmt.str "  %s@." (Ast.show_schema s)
+  | Ast.ExecutableDefinition e ->
+      Fmt.str "  %s@." (Ast.show_executable_definition e)
 
 let print_node = function
   | Ast.Document document ->
@@ -727,12 +822,44 @@ module Test = struct
   let%expect_test "testSimpleQueryExecDoc" =
     let input = {|
 query foo{
-  field
+      foo {
+        field
+    }
 }
 
 |} in
     expect_document input;
-    [%expect {|
+    [%expect
+      {|
+      Document: [
+          { name = "foo"; operation = Query; args = None; variables = None;
+        selection = [(Field "field")] }
+
+      ]
+
+|}]
+
+  let%expect_test "testSimpleQueryExecDocWithArgs" =
+    let input =
+      {|
+query foo($var1: String){
+      foo(var1: $var1) {
+        field
+    }
+}
+
+|}
+    in
+    expect_document input;
+    [%expect
+      {|
+      Document: [
+          { name = "foo"; operation = Query;
+        args = (Some [{ name = "var1"; value = "$var1" }]);
+        variables = (Some [{ name = "$var1"; ty = (NamedType "String") }]);
+        selection = [(Field "field")] }
+
+      ]
 
 |}]
 end

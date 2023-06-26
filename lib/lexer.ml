@@ -40,6 +40,7 @@ let is_letter ch =
   | 'A' .. 'Z' -> true
   | 'a' .. 'z' -> true
   | '_' -> true
+  | '$' -> true
   | _ -> false
 
 let is_whitespace lexer =
