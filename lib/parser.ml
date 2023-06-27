@@ -111,10 +111,35 @@ and parse_definition parser =
   | Token.Name "mutation"
   | Token.LeftBrace ->
       parse_executable_document parser
+  | Token.Name "fragment" -> parse_fragment (next_token parser)
   | _ ->
       failwith
         (Printf.sprintf "unexpected definition: %s"
            (Token.show parser.cur_token))
+
+and parse_fragment parser =
+  let* parser, name = parse_name parser in
+  match parser.peek_token with
+  | Token.Name "on" ->
+      let parser = next_token parser in
+      let parser = next_token parser in
+      let* parser, type_condition = parse_name parser in
+      let parser, ok = expect_peek_left_brace parser in
+      if ok then
+        let* parser, selection = parse_selection_set parser in
+
+        let parser, ok = expect_peek_right_brace parser in
+        if ok then
+          Ok
+            ( parser,
+              Ast.ExecutableDefinition
+                (Ast.FragmentDefinition { name; type_condition; selection }) )
+        else
+          failwith_parser_error parser
+            "expected right brace after fragment seletion"
+      else
+        failwith_parser_error parser "expected left brace for fragment seletion"
+  | _ -> failwith_parser_error parser "expected 'on' token"
 
 and parse_executable_document parser =
   match parser.cur_token with
@@ -171,14 +196,15 @@ and parse_query parser =
               Ok
                 ( parser,
                   Ast.ExecutableDefinition
-                    Ast.
-                      {
-                        name = operation;
-                        operation = Ast.Query;
-                        args;
-                        variables = vars;
-                        selection;
-                      } )))
+                    (Ast.OperationDefinition
+                       Ast.
+                         {
+                           name = operation;
+                           operation = Ast.Query;
+                           args;
+                           variables = vars;
+                           selection;
+                         }) )))
   | _ -> failwith_parser_error parser "parse_query: expected left brace"
 
 and parse_selection_set parser =
@@ -188,6 +214,12 @@ and parse_selection_set parser =
         let parser = next_token parser in
         let* parser, name = parse_name parser in
         let ss = Ast.Field name in
+        parse_selection_set' parser (ss :: set)
+    | Token.Ellipsis ->
+        let parser = next_token parser in
+        let parser = next_token parser in
+        let* parser, name = parse_name parser in
+        let ss = Ast.SpreadField name in
         parse_selection_set' parser (ss :: set)
     | _ -> Ok (parser, set)
   in
@@ -506,12 +538,6 @@ let parse_document input =
   let parser = init lexer in
   let document = parse parser in
   document
-
-(* let parse_executable_document input = *)
-(*   let lexer = Lexer.init input in *)
-(*   let parser = init lexer in *)
-(*   let document = parse parser in *)
-(*   document *)
 
 let show_type_definition = Ast.show_type_definition
 
@@ -832,8 +858,9 @@ query foo{
     [%expect
       {|
       Document: [
-          { name = "foo"; operation = Query; args = None; variables = None;
-        selection = [(Field "field")] }
+          (OperationDefinition
+         { name = "foo"; operation = Query; args = None; variables = None;
+           selection = [(Field "field")] })
 
       ]
 
@@ -854,12 +881,60 @@ query foo($var1: String){
     [%expect
       {|
       Document: [
-          { name = "foo"; operation = Query;
-        args = (Some [{ name = "var1"; value = "$var1" }]);
-        variables = (Some [{ name = "$var1"; ty = (NamedType "String") }]);
-        selection = [(Field "field")] }
+          (OperationDefinition
+         { name = "foo"; operation = Query;
+           args = (Some [{ name = "var1"; value = "$var1" }]);
+           variables = (Some [{ name = "$var1"; ty = (NamedType "String") }]);
+           selection = [(Field "field")] })
 
       ]
 
 |}]
+
+  let%expect_test "testQueryWithSpread" =
+    let input =
+      {|
+query foo($var1: String){
+      foo(var1: $var1) {
+        ...field
+    }
+}
+
+|}
+    in
+    expect_document input;
+    [%expect
+      {|
+      Document: [
+          (OperationDefinition
+         { name = "foo"; operation = Query;
+           args = (Some [{ name = "var1"; value = "$var1" }]);
+           variables = (Some [{ name = "$var1"; ty = (NamedType "String") }]);
+           selection = [(SpreadField "field")] })
+
+      ]
+
+|}]
+
+  let%expect_test "testFragment" =
+    let input =
+      {|
+fragment Actions on Actions {
+  view
+  edit
+  add
+  delete
+}
+|}
+    in
+    expect_document input;
+    [%expect
+      {|
+      Document: [
+          (FragmentDefinition
+         { name = "Actions"; type_condition = "Actions";
+           selection =
+           [(Field "delete"); (Field "add"); (Field "edit"); (Field "view")] })
+
+      ] |}]
 end

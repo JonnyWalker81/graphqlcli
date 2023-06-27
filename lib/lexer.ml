@@ -1,7 +1,13 @@
 open Base
 open Core
 
-type t = { input : string; position : int; read_position : int; ch : char; line: int}
+type t = {
+  input : string;
+  position : int;
+  read_position : int;
+  ch : char;
+  line : int;
+}
 [@@deriving show]
 
 let null_byte = '\x00'
@@ -21,17 +27,20 @@ let read_char lexer =
   }
 
 let init input =
-  let lexer = { input; position = 0; read_position = 0; ch = null_byte; line = 1} in
+  let lexer =
+    { input; position = 0; read_position = 0; ch = null_byte; line = 1 }
+  in
   read_char lexer
 
 let increment_line lexer =
-  let lexer = {
-    input = lexer.input;
-    position = lexer.position;
-    read_position = lexer.read_position;
-    ch = lexer.ch;
-    line = lexer.line + 1
-  }
+  let lexer =
+    {
+      input = lexer.input;
+      position = lexer.position;
+      read_position = lexer.read_position;
+      ch = lexer.ch;
+      line = lexer.line + 1;
+    }
   in
   lexer
 
@@ -47,7 +56,8 @@ let is_whitespace lexer =
   match lexer.ch with
   | ' ' -> (lexer, true)
   | '\t' -> (lexer, true)
-  | '\n' -> let lexer = increment_line lexer in
+  | '\n' ->
+    let lexer = increment_line lexer in
     (lexer, true)
   | '\r' -> (lexer, true)
   | _ -> (lexer, false)
@@ -119,8 +129,18 @@ let read_comment lexer =
   let lexer, comment = read_while is_not_end_of_line lexer "" in
   (lexer, Token.Comment comment)
 
+let read_ellipsis lexer =
+  let lexer, is_period_one = peek_is lexer 1 '.' in
+  let lexer, is_period_two = peek_is lexer 1 '.' in
+  if is_period_one && is_period_two then
+    let lexer = read_char lexer in
+    let lexer = read_char lexer in
+    let lexer = read_char lexer in
+    (lexer, Token.Ellipsis)
+  else (lexer, Token.Illegal)
+
 let next_token lexer =
-  let lexer = skip_while is_whitespace  lexer in
+  let lexer = skip_while is_whitespace lexer in
   let ch = lexer.ch in
   match ch with
   | '{' -> (read_char lexer, Token.LeftBrace)
@@ -137,6 +157,7 @@ let next_token lexer =
   | '|' -> (read_char lexer, Token.Pipe)
   | '"' -> read_string (read_char lexer)
   | '#' -> read_comment (read_char lexer)
+  | '.' -> read_ellipsis lexer
   | '\x00' -> (read_char lexer, Token.Eof)
   | ch when is_letter ch ->
     let lexer, ident = read_identifier lexer in

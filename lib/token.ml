@@ -23,6 +23,7 @@ type t =
   | Equal
   | Comma
   | Colon
+  | Ellipsis
   | Pipe
   | String
   | StringLiteral of string

@@ -76,14 +76,12 @@ type schema = {
 type operation = Query | Mutation | Subscription
 [@@deriving show { with_path = false }, sexp]
 
-type sub_field = {
-  name: string;
-  fields: selection_field list
-}
+type sub_field = { name : string; fields : selection_field list }
 [@@deriving show { with_path = false }, sexp]
 
 and selection_field =
   | Field of string
+  | SpreadField of string
   | SubField of sub_field
 [@@deriving show { with_path = false }, sexp]
 
@@ -92,13 +90,25 @@ and selection_field =
 (* } *)
 (* [@@deriving show { with_path = false }, sexp] *)
 
-type executable_definition = {
+type operation_definition = {
   name : string;
   operation : operation;
   args : operation_arg list option;
   variables : argument_definition list option;
-  selection: selection_field list
+  selection : selection_field list;
 }
+[@@deriving show { with_path = false }, sexp]
+
+type fragment_definition = {
+  name : string;
+  type_condition: string;
+  selection : selection_field list;
+}
+[@@deriving show { with_path = false }, sexp]
+
+type executable_definition =
+  | OperationDefinition of operation_definition
+  | FragmentDefinition of fragment_definition
 [@@deriving show { with_path = false }, sexp]
 
 type definition =

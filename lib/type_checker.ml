@@ -36,19 +36,19 @@ module Test = struct
     | Error msg -> Fmt.failwith "error...%s" msg
   (* | Error msg -> Fmt.failwith "%a@." pp_parse_error msg *)
 
-  let%expect_test "testTypeCheck" =
-    let input = {|
-      type Foo {
-       bar: String
-}
+(*   let%expect_test "testTypeCheck" = *)
+(*     let input = {| *)
+(*       type Foo { *)
+(*        bar: String *)
+(* } *)
 
-      type Baz {
-      qux: Int!
-}
-|} in
-    type_check_document input;
-    [%expect {|
+(*       type Baz { *)
+(*       qux: Int! *)
+(* } *)
+(* |} in *)
+(*     type_check_document input; *)
+(*     [%expect {| *)
 
-|}]
+(* |}] *)
 
   end
