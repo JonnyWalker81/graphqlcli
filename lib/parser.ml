@@ -97,13 +97,17 @@ let rec parse parser =
   Ok (Ast.Document definitions)
 
 and parse_definition parser =
+  let parser, description = parse_description parser in
+  let parser =
+    match description with Some _ -> next_token parser | None -> parser
+  in
   match parser.cur_token with
-  | Token.Type -> parse_type (next_token parser)
-  | Token.Schema -> parse_schema (next_token parser)
-  | Token.Scalar -> parse_scalar (next_token parser)
-  | Token.Union -> parse_union (next_token parser)
-  | Token.Enum -> parse_enum (next_token parser)
-  | Token.Input -> parse_input_type (next_token parser)
+  | Token.Type -> parse_type (next_token parser) description
+  | Token.Schema -> parse_schema (next_token parser) description
+  | Token.Scalar -> parse_scalar (next_token parser) description
+  | Token.Union -> parse_union (next_token parser) description
+  | Token.Enum -> parse_enum (next_token parser) description
+  | Token.Input -> parse_input_type (next_token parser) description
   | Token.Comment comment ->
       Ok (parser, Ast.TypeDefinition (Ast.Comment comment))
   | Token.Query | Token.Mutation
@@ -265,7 +269,7 @@ and parse_variables parser =
             let parser = next_token parser in
 
             let* parser, gql_type = parse_graphql_type parser in
-            let var = Ast.{ name; ty = gql_type } in
+            let var = Ast.{ name; ty = gql_type; description = None } in
             parse_variables' parser (var :: vars)
         | _ ->
             failwith_parser_error parser
@@ -280,16 +284,16 @@ and parse_mutation parser =
   let _parser = next_token parser in
   failwith "parse_mutation"
 
-and parse_input_type parser =
+and parse_input_type parser description =
   let* parser, name = parse_name parser in
   let parser, ok = expect_peek_left_brace parser in
   match (parser, ok) with
   | parser, true ->
       let* parser, fields = parse_type_definition parser in
-      Ok (parser, Ast.TypeDefinition (Ast.Input { name; fields }))
+      Ok (parser, Ast.TypeDefinition (Ast.Input { name; fields; description }))
   | _, false -> Error "expected left brace"
 
-and parse_enum parser =
+and parse_enum parser description =
   let* parser, name = parse_name parser in
   let parser, ok = expect_peek_left_brace parser in
   if not ok then failwith "parse_enum: expected left brace"
@@ -302,12 +306,14 @@ and parse_enum parser =
       | _ ->
           let* parser, name = parse_name parser in
           let parser = next_token parser in
-          parse_enum_value parser (name :: vals)
+          parse_enum_value parser (Ast.{ name; description = None } :: vals)
     in
     let* parser, vals = parse_enum_value parser [] in
-    Ok (parser, Ast.TypeDefinition (Ast.Enum { name; values = vals }))
+    Ok
+      ( parser,
+        Ast.TypeDefinition (Ast.Enum { name; values = vals; description }) )
 
-and parse_union parser =
+and parse_union parser description =
   let* parser, union_name = parse_name parser in
   let parser, ok = expect_peek_equal parser in
   if not ok then failwith "parse_union: expected ="
@@ -325,18 +331,26 @@ and parse_union parser =
       | _ -> Ok (parser, List.rev members)
     in
     let* parser, members = parse_member parser [ name ] in
-    Ok (parser, Ast.TypeDefinition (Ast.Union { name = union_name; members }))
+    Ok
+      ( parser,
+        Ast.TypeDefinition
+          (Ast.Union { name = union_name; members; description }) )
 
-and parse_scalar parser =
-  let* parser, name = parse_name parser in
-  Ok (parser, Ast.TypeDefinition (Ast.Scalar name))
-
-and parse_schema parser =
+and parse_description parser =
   match parser.cur_token with
-  | Token.LeftBrace -> parse_schema_def (next_token parser)
+  | Token.StringLiteral s -> (parser, Some s)
+  | _ -> (parser, None)
+
+and parse_scalar parser description =
+  let* parser, name = parse_name parser in
+  Ok (parser, Ast.TypeDefinition (Ast.Scalar { name; description }))
+
+and parse_schema parser description =
+  match parser.cur_token with
+  | Token.LeftBrace -> parse_schema_def (next_token parser) description
   | _ -> Error "parse_schema: expected left brace"
 
-and parse_schema_def parser =
+and parse_schema_def parser description =
   let rec parse_schema_def' parser fields =
     match parser.peek_token with
     | Token.RightBrace | Token.Eof -> Ok (parser, List.rev fields)
@@ -364,6 +378,7 @@ and parse_schema_def parser =
               query = make_schema_op query;
               mutation = make_schema_op mutation;
               subscription = make_schema_op subscription;
+              description;
             } )
   | _ -> Error "parse_schema_def: expected closing right brace"
 
@@ -389,17 +404,24 @@ and parse_schema_op_type parser =
         (Printf.sprintf "parse_schema_op_type: expected colon: %s"
            (Token.show parser.peek_token))
 
-and parse_type parser =
+and parse_type parser description =
   let* parser, name = parse_name parser in
   let parser, ok = expect_peek_left_brace parser in
   match (parser, ok) with
   | parser, true ->
       let* parser, fields = parse_type_definition parser in
-      Ok (parser, Ast.TypeDefinition (Ast.Object { name; fields }))
+      Ok (parser, Ast.TypeDefinition (Ast.Object { name; fields; description }))
   | _, false -> Error "expected left brace"
 
 and parse_type_definition parser =
   let rec parse_type_def' parser fields =
+    let parser, description =
+      match parser.peek_token with
+      | Token.StringLiteral _ ->
+          let parser = next_token parser in
+          parse_description parser
+      | _ -> (parser, None)
+    in
     match parser.peek_token with
     | Token.RightBrace | Token.Eof -> Ok (parser, List.rev fields)
     | Token.Comment _ -> parse_type_def' (next_token parser) fields
@@ -420,13 +442,13 @@ and parse_type_definition parser =
             let parser = next_token parser in
             let parser = next_token parser in
             let* parser, ty = parse_graphql_type parser in
-            let field = Ast.{ name; args; ty } in
+            let field = Ast.{ name; args; ty; description } in
             parse_type_def' parser (field :: fields)
         | Token.Name _ ->
             let parser = next_token parser in
             let* parser, ty = parse_graphql_type parser in
 
-            let field = Ast.{ name; args; ty } in
+            let field = Ast.{ name; args; ty; description } in
             parse_type_def' parser (field :: fields)
         | _ -> failwith "parse_type_definition: expected a name or a colon")
     | _ ->
@@ -476,7 +498,9 @@ and parse_field_args parser =
                   | Ok (parser, gql_type) -> (parser, gql_type)
                   | Error _ -> failwith "error parsing graphql type"
                 in
-                let parser, arg = (parser, Ast.{ name; ty = gql_type }) in
+                let parser, arg =
+                  (parser, Ast.{ name; ty = gql_type; description = None })
+                in
                 parse_field_args' parser (arg :: args)
             | _ -> failwith "parse_field_args")
         | _ ->
@@ -567,8 +591,12 @@ module Test = struct
   let%expect_test "testSimpleDocument" =
     let input =
       {|
+           "Scalar Description"
            scalar UUID
+
+        "description for type"
                     type Query {
+                        "field description"
                        foo: String
                        bar: String!
                        baz: [String]
@@ -582,26 +610,31 @@ module Test = struct
     [%expect
       {|
          Document: [
-             (Scalar "UUID")
+             (Scalar { name = "UUID"; description = (Some "Scalar Description") })
 
              (Object
             { name = "Query";
               fields =
-              [{ name = "foo"; args = None; ty = (NamedType "String") };
-                { name = "bar"; args = None; ty = (NonNullType (NamedType "String")) };
-                { name = "baz"; args = None; ty = (ListType (NamedType "String")) };
+              [{ name = "foo"; args = None; ty = (NamedType "String");
+                 description = (Some "field description") };
+                { name = "bar"; args = None; ty = (NonNullType (NamedType "String"));
+                  description = None };
+                { name = "baz"; args = None; ty = (ListType (NamedType "String"));
+                  description = None };
                 { name = "qux"; args = None;
-                  ty = (NonNullType (ListType (NamedType "String"))) };
+                  ty = (NonNullType (ListType (NamedType "String")));
+                  description = None };
                 { name = "get"; args = None;
-                  ty = (NonNullType (ListType (NonNullType (NamedType "String")))) };
+                  ty = (NonNullType (ListType (NonNullType (NamedType "String"))));
+                  description = None };
                 { name = "set"; args = None;
                   ty =
                   (NonNullType
                      (ListType
-                        (NonNullType (ListType (NonNullType (NamedType "String"))))))
-                  }
-                ]
-              })
+                        (NonNullType (ListType (NonNullType (NamedType "String"))))));
+                  description = None }
+                ];
+              description = (Some "description for type") })
 
          ]
 
@@ -625,9 +658,10 @@ module Test = struct
          query -> MyQuery
          Document: [
              { query = (Some { name = "MyQuery" });
-           mutation = (Some { name = "MyMutation" }); subscription = None }
+           mutation = (Some { name = "MyMutation" }); subscription = None;
+           description = None }
 
-             (Scalar "Status")
+             (Scalar { name = "Status"; description = None })
 
          ]
 
@@ -652,35 +686,44 @@ module Test = struct
     [%expect
       {|
       Document: [
-          (Scalar "UUID")
+          (Scalar { name = "UUID"; description = None })
 
           (Object
          { name = "Query";
            fields =
            [{ name = "fooQuery";
               args =
-              (Some [{ name = "arg1"; ty = (NamedType "Int") };
-                      { name = "arg2"; ty = (NonNullType (NamedType "Boolean")) }]);
-              ty = (NamedType "String") }
-             ]
-           })
+              (Some [{ name = "arg1"; ty = (NamedType "Int"); description = None };
+                      { name = "arg2"; ty = (NonNullType (NamedType "Boolean"));
+                        description = None }
+                      ]);
+              ty = (NamedType "String"); description = None }
+             ];
+           description = None })
 
           (Object
          { name = "Mutation";
            fields =
            [{ name = "fooMut";
               args =
-              (Some [{ name = "fooArg1"; ty = (NamedType "String") };
-                      { name = "fooArg2"; ty = (NonNullType (NamedType "Int")) }]);
-              ty = (NonNullType (ListType (NonNullType (NamedType "String")))) };
+              (Some [{ name = "fooArg1"; ty = (NamedType "String");
+                       description = None };
+                      { name = "fooArg2"; ty = (NonNullType (NamedType "Int"));
+                        description = None }
+                      ]);
+              ty = (NonNullType (ListType (NonNullType (NamedType "String"))));
+              description = None };
              { name = "bar";
                args =
-               (Some [{ name = "barArg1"; ty = (NonNullType (NamedType "Boolean"))
-                        };
-                       { name = "barArg2"; ty = (NamedType "Boolean") }]);
-               ty = (NonNullType (ListType (NonNullType (NamedType "String")))) }
-             ]
-           })
+               (Some [{ name = "barArg1"; ty = (NonNullType (NamedType "Boolean"));
+                        description = None };
+                       { name = "barArg2"; ty = (NamedType "Boolean");
+                         description = None }
+                       ]);
+               ty = (NonNullType (ListType (NonNullType (NamedType "String"))));
+               description = None }
+             ];
+           description = None })
 
       ] |}]
 
@@ -694,7 +737,7 @@ module Test = struct
     [%expect
       {|
          Document: [
-             (Union { name = "foo"; members = ["Bar"; "Foobar"] })
+             (Union { name = "foo"; members = ["Bar"; "Foobar"]; description = None })
 
          ] |}]
 
@@ -712,7 +755,13 @@ module Test = struct
     [%expect
       {|
            Document: [
-               (Enum { name = "Foo"; values = ["BAR"; "FOOBAR"; "BAZ"] })
+               (Enum
+              { name = "Foo";
+                values =
+                [{ name = "BAR"; description = None };
+                  { name = "FOOBAR"; description = None };
+                  { name = "BAZ"; description = None }];
+                description = None })
 
            ] |}]
 
@@ -739,19 +788,31 @@ module Test = struct
     [%expect
       {|
            Document: [
-               (Scalar "Cost")
+               (Scalar { name = "Cost"; description = None })
 
                (Comment "cost type")
 
                (Comment "this is a top-level comment")
 
-               (Union { name = "bar"; members = ["Bar"; "Foobar"; "Qux"] })
+               (Union
+              { name = "bar"; members = ["Bar"; "Foobar"; "Qux"]; description = None })
 
-               (Enum { name = "Kind"; values = ["NORTH"; "SOUTH"; "EAST"; "WEST"] })
+               (Enum
+              { name = "Kind";
+                values =
+                [{ name = "NORTH"; description = None };
+                  { name = "SOUTH"; description = None };
+                  { name = "EAST"; description = None };
+                  { name = "WEST"; description = None }];
+                description = None })
 
                (Object
               { name = "Mutation";
-                fields = [{ name = "foo"; args = None; ty = (NamedType "String") }] })
+                fields =
+                [{ name = "foo"; args = None; ty = (NamedType "String");
+                   description = None }
+                  ];
+                description = None })
 
            ] |}]
 
@@ -773,13 +834,15 @@ module Test = struct
                (Input
               { name = "QueryInput";
                 fields =
-                [{ name = "category"; args = None; ty = (NamedType "String") };
-                  { name = "name"; args = None; ty = (NonNullType (NamedType "String"))
-                    };
+                [{ name = "category"; args = None; ty = (NamedType "String");
+                   description = None };
+                  { name = "name"; args = None; ty = (NonNullType (NamedType "String"));
+                    description = None };
                   { name = "labels"; args = None;
-                    ty = (ListType (NonNullType (NamedType "String"))) }
-                  ]
-                })
+                    ty = (ListType (NonNullType (NamedType "String")));
+                    description = None }
+                  ];
+                description = None })
 
            ] |}]
 
@@ -805,15 +868,18 @@ module Test = struct
                 fields =
                 [{ name = "category";
                    args =
-                   (Some [{ name = "id"; ty = (NamedType "UUID") };
-                           { name = "name"; ty = (NamedType "String") }]);
-                   ty = (NamedType "String") };
-                  { name = "name"; args = None; ty = (NonNullType (NamedType "String"))
-                    };
+                   (Some [{ name = "id"; ty = (NamedType "UUID"); description = None };
+                           { name = "name"; ty = (NamedType "String");
+                             description = None }
+                           ]);
+                   ty = (NamedType "String"); description = None };
+                  { name = "name"; args = None; ty = (NonNullType (NamedType "String"));
+                    description = None };
                   { name = "labels"; args = None;
-                    ty = (ListType (NonNullType (NamedType "String"))) }
-                  ]
-                })
+                    ty = (ListType (NonNullType (NamedType "String")));
+                    description = None }
+                  ];
+                description = None })
 
            ] |}]
 
@@ -837,11 +903,14 @@ module Test = struct
                 fields =
                 [{ name = "category";
                    args =
-                   (Some [{ name = "input"; ty = (NonNullType (NamedType "String")) };
-                           { name = "type"; ty = (NamedType "String") }]);
-                   ty = (NamedType "String") }
-                  ]
-                })
+                   (Some [{ name = "input"; ty = (NonNullType (NamedType "String"));
+                            description = None };
+                           { name = "type"; ty = (NamedType "String");
+                             description = None }
+                           ]);
+                   ty = (NamedType "String"); description = None }
+                  ];
+                description = None })
 
            ] |}]
 
@@ -884,7 +953,9 @@ query foo($var1: String){
           (OperationDefinition
          { name = "foo"; operation = Query;
            args = (Some [{ name = "var1"; value = "$var1" }]);
-           variables = (Some [{ name = "$var1"; ty = (NamedType "String") }]);
+           variables =
+           (Some [{ name = "$var1"; ty = (NamedType "String"); description = None }
+                   ]);
            selection = [(Field "field")] })
 
       ]
@@ -909,7 +980,9 @@ query foo($var1: String){
           (OperationDefinition
          { name = "foo"; operation = Query;
            args = (Some [{ name = "var1"; value = "$var1" }]);
-           variables = (Some [{ name = "$var1"; ty = (NamedType "String") }]);
+           variables =
+           (Some [{ name = "$var1"; ty = (NamedType "String"); description = None }
+                   ]);
            selection = [(SpreadField "field")] })
 
       ]

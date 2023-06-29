@@ -11,29 +11,60 @@ and graphql_type =
   | NonNullType of graphql_type
 [@@deriving show { with_path = false }, sexp]
 
-type argument_definition = { name : string; ty : graphql_type }
+type argument_definition = {
+  name : string;
+  ty : graphql_type;
+  description : string option;
+}
 [@@deriving show { with_path = false }, sexp]
 
 type field = {
   name : string;
   args : argument_definition list option;
   ty : graphql_type;
+  description : string option;
 }
 [@@deriving show { with_path = false }, sexp]
 
-type object_type = { name : string; fields : field list }
+type scalar_type = { name : string; description : string option }
 [@@deriving show { with_path = false }, sexp]
 
-type union_type = { name : string; members : string list }
+type object_type = {
+  name : string;
+  fields : field list;
+  description : string option;
+}
 [@@deriving show { with_path = false }, sexp]
 
-type enum_type = { name : string; values : string list }
+type union_type = {
+  name : string;
+  members : string list;
+  description : string option;
+}
 [@@deriving show { with_path = false }, sexp]
 
-type input_type = { name : string; fields : field list }
+type enum_value = { name : string; description : string option }
 [@@deriving show { with_path = false }, sexp]
 
-type object_field = { name : string; value : object_type }
+type enum_type = {
+  name : string;
+  values : enum_value list;
+  description : string option;
+}
+[@@deriving show { with_path = false }, sexp]
+
+type input_type = {
+  name : string;
+  fields : field list;
+  description : string option;
+}
+[@@deriving show { with_path = false }, sexp]
+
+type object_field = {
+  name : string;
+  value : object_type;
+  description : string option;
+}
 [@@deriving show { with_path = false }, sexp]
 
 and object_field_type =
@@ -52,7 +83,7 @@ type operation_arg = { name : string; value : string }
 [@@deriving show { with_path = false }, sexp]
 
 type type_definition =
-  | Scalar of string
+  | Scalar of scalar_type
   | Object of object_type
   | Union of union_type
   | Enum of enum_type
@@ -70,6 +101,7 @@ type schema = {
   query : operation_type option;
   mutation : operation_type option;
   subscription : operation_type option;
+  description : string option;
 }
 [@@deriving show { with_path = false }, sexp]
 
@@ -101,7 +133,7 @@ type operation_definition = {
 
 type fragment_definition = {
   name : string;
-  type_condition: string;
+  type_condition : string;
   selection : selection_field list;
 }
 [@@deriving show { with_path = false }, sexp]
