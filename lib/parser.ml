@@ -97,9 +97,10 @@ let rec parse parser =
   Ok (Ast.Document definitions)
 
 and parse_definition parser =
-  let parser, description = parse_description parser in
-  let parser =
-    match description with Some _ -> next_token parser | None -> parser
+  let parser, description =
+    match parse_description parser with
+    | parser, Some d -> (next_token parser, Some d)
+    | parser, None -> (parser, None)
   in
   match parser.cur_token with
   | Token.Type -> parse_type (next_token parser) description
