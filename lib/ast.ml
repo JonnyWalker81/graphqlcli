@@ -36,19 +36,25 @@ type object_type = {
 }
 [@@deriving show { with_path = false }, sexp]
 
+(* type union_member = { *)
+(*   name: string; *)
+(*   description: string option; *)
+(* } *)
+(* [@@deriving show { with_path = false }, sexp] *)
+
+type union_enum_value = { name : string; description : string option }
+[@@deriving show { with_path = false }, sexp]
+
 type union_type = {
   name : string;
-  members : string list;
+  members : union_enum_value list;
   description : string option;
 }
 [@@deriving show { with_path = false }, sexp]
 
-type enum_value = { name : string; description : string option }
-[@@deriving show { with_path = false }, sexp]
-
 type enum_type = {
   name : string;
-  values : enum_value list;
+  values : union_enum_value list;
   description : string option;
 }
 [@@deriving show { with_path = false }, sexp]

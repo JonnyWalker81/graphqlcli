@@ -301,13 +301,20 @@ and parse_enum parser description =
   else
     let parser = next_token parser in
     let rec parse_enum_value parser vals =
+      let parser, enum_desc =
+        match parse_description parser with
+        | parser, Some d ->
+            let parser = next_token parser in
+            (parser, Some d)
+        | _ -> (parser, None)
+      in
       match parser.cur_token with
       | Token.RightBrace -> Ok (parser, List.rev vals)
       | Token.Comment _ -> parse_enum_value (next_token parser) vals
       | _ ->
           let* parser, name = parse_name parser in
           let parser = next_token parser in
-          parse_enum_value parser (Ast.{ name; description = None } :: vals)
+          parse_enum_value parser (Ast.{ name; description = enum_desc } :: vals)
     in
     let* parser, vals = parse_enum_value parser [] in
     Ok
@@ -320,18 +327,36 @@ and parse_union parser description =
   if not ok then failwith "parse_union: expected ="
   else
     let parser = next_token parser in
+    let parser, first_union_desc =
+      match parse_description parser with
+      | parser, Some d ->
+          let parser = next_token parser in
+          (parser, Some d)
+      | _ -> (parser, None)
+    in
     let* parser, name = parse_name parser in
+
     let rec parse_member parser members =
+      let parser, union_desc =
+        match parse_description parser with
+        | parser, Some d ->
+            let parser = next_token parser in
+            (parser, Some d)
+        | _ -> (parser, None)
+      in
+
       match parser.peek_token with
       | Token.Pipe ->
           let parser = next_token parser in
           let parser = next_token parser in
           let* parser, name = parse_name parser in
-          parse_member parser (name :: members)
+          parse_member parser (Ast.{ name; description = union_desc } :: members)
       | Token.Comment _ -> parse_member (next_token parser) members
       | _ -> Ok (parser, List.rev members)
     in
-    let* parser, members = parse_member parser [ name ] in
+    let* parser, members =
+      parse_member parser [ Ast.{ name; description = first_union_desc } ]
+    in
     Ok
       ( parser,
         Ast.TypeDefinition
@@ -731,23 +756,35 @@ module Test = struct
   let%expect_test "testUnion" =
     let input =
       {|
-            union foo = Bar | Foobar
+           "union description"
+            union foo = 
+                "bar union desc"
+                Bar 
+              | Foobar
                      |}
     in
     expect_document input;
     [%expect
       {|
          Document: [
-             (Union { name = "foo"; members = ["Bar"; "Foobar"]; description = None })
+             (Union
+            { name = "foo";
+              members =
+              [{ name = "Bar"; description = (Some "bar union desc") };
+                { name = "Foobar"; description = None }];
+              description = (Some "union description") })
 
          ] |}]
 
   let%expect_test "testEnum" =
     let input =
       {|
+            "Enum description"
              enum Foo {
+               "bar description"
                BAR
                FOOBAR
+               "baz desc"
                BAZ
              }
                        |}
@@ -759,10 +796,10 @@ module Test = struct
                (Enum
               { name = "Foo";
                 values =
-                [{ name = "BAR"; description = None };
+                [{ name = "BAR"; description = (Some "bar description") };
                   { name = "FOOBAR"; description = None };
-                  { name = "BAZ"; description = None }];
-                description = None })
+                  { name = "BAZ"; description = (Some "baz desc") }];
+                description = (Some "Enum description") })
 
            ] |}]
 
@@ -796,7 +833,12 @@ module Test = struct
                (Comment "this is a top-level comment")
 
                (Union
-              { name = "bar"; members = ["Bar"; "Foobar"; "Qux"]; description = None })
+              { name = "bar";
+                members =
+                [{ name = "Bar"; description = None };
+                  { name = "Foobar"; description = None };
+                  { name = "Qux"; description = None }];
+                description = None })
 
                (Enum
               { name = "Kind";
