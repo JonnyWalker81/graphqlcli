@@ -1,40 +1,39 @@
-type field_type = { name : string }
-[@@deriving show { with_path = false }, sexp]
+(* module Field = struct *)
+(*   type field_type = { name : string } *)
+(*   [@@deriving show { with_path = false }, sexp] *)
+(* end *)
 
 (* and non_null_type = *)
 (*   | NonNullNamedType of graphql_type *)
 (*   | NonNullListType of graphql_type list *)
 (* [@@deriving show { with_path = false }, sexp] *)
-and graphql_type =
-  | NamedType of string
-  | ListType of graphql_type
-  | NonNullType of graphql_type
-[@@deriving show { with_path = false }, sexp]
+module GraphqlType = struct
+  type t = NamedType of string | ListType of t | NonNullType of t
+  [@@deriving show { with_path = false }, sexp]
+end
 
-type argument_definition = {
-  name : string;
-  ty : graphql_type;
-  description : string option;
-}
-[@@deriving show { with_path = false }, sexp]
+module ArgumentDefiniton = struct
+  type t = { name : string; ty : GraphqlType.t; description : string option }
+  [@@deriving show { with_path = false }, sexp]
+end
 
-type field = {
-  name : string;
-  args : argument_definition list option;
-  ty : graphql_type;
-  description : string option;
-}
-[@@deriving show { with_path = false }, sexp]
+module Field = struct
+  type t = {
+    name : string;
+    args : ArgumentDefiniton.t list option;
+    ty : GraphqlType.t;
+    description : string option;
+  }
+  [@@deriving show { with_path = false }, sexp]
+end
 
 (* type scalar_type = { name : string; description : string option } *)
 (* [@@deriving show { with_path = false }, sexp] *)
 
-type object_type = {
-  name : string;
-  fields : field list;
-  description : string option;
-}
-[@@deriving show { with_path = false }, sexp]
+module ObjectType = struct
+  type t = { name : string; fields : Field.t list; description : string option }
+  [@@deriving show { with_path = false }, sexp]
+end
 
 (* type union_member = { *)
 (*   name: string; *)
@@ -42,60 +41,60 @@ type object_type = {
 (* } *)
 (* [@@deriving show { with_path = false }, sexp] *)
 
-type op_union_enum_value = { name : string; description : string option }
-[@@deriving show { with_path = false }, sexp]
+module BaseValue = struct
+  type t = { name : string; description : string option }
+  [@@deriving show { with_path = false }, sexp]
+end
 
-type union_type = {
-  name : string;
-  members : op_union_enum_value list;
-  description : string option;
-}
-[@@deriving show { with_path = false }, sexp]
+module UnionType = struct
+  type t = { name : string; members : BaseValue.t list; description : string option }
+  [@@deriving show { with_path = false }, sexp]
+end
 
-type enum_type = {
-  name : string;
-  values : op_union_enum_value list;
-  description : string option;
-}
-[@@deriving show { with_path = false }, sexp]
+module EnumType = struct
+  type t = { name : string; values : BaseValue.t list; description : string option }
+  [@@deriving show { with_path = false }, sexp]
+end
 
-type input_type = {
-  name : string;
-  fields : field list;
-  description : string option;
-}
-[@@deriving show { with_path = false }, sexp]
+module InputType = struct
+  type t = { name : string; fields : Field.t list; description : string option }
+  [@@deriving show { with_path = false }, sexp]
+end
 
-type object_field = {
-  name : string;
-  value : object_type;
-  description : string option;
-}
-[@@deriving show { with_path = false }, sexp]
+module ObjectField = struct
+  type t = { name : string; value : ObjectType.t; description : string option }
+  [@@deriving show { with_path = false }, sexp]
+end
 
-and object_field_type =
-  | String of string
-  | Int of int
-  | Float of float
-  | Boolean of bool
-  | Null
-  | Enum of string
-  | List of object_type list
-  | Object of object_field list
-[@@deriving show { with_path = false }, sexp]
+module ObjectFieldType = struct
+  type t =
+    | String of string
+    | Int of int
+    | Float of float
+    | Boolean of bool
+    | Null
+    | Enum of string
+    | List of ObjectType.t list
+    | Object of ObjectField.t list
+  [@@deriving show { with_path = false }, sexp]
+end
 
 (* type operation_arg = { name : string; value : object_field_type } *)
-type operation_arg = { name : string; value : string }
-[@@deriving show { with_path = false }, sexp]
+module OperationArg = struct
+  type t = { name : string; value : string }
+  [@@deriving show { with_path = false }, sexp]
+end
 
-type type_definition =
-  | Scalar of op_union_enum_value
-  | Object of object_type
-  | Union of union_type
-  | Enum of enum_type
-  | Input of input_type
-  | Comment of string
-[@@deriving show { with_path = false }, sexp]
+module TypeDefinition = struct
+  type t =
+    | Scalar of BaseValue.t
+    | Object of ObjectType.t
+    | Union of UnionType.t
+    | Enum of EnumType.t
+    | Input of InputType.t
+    | Comment of string
+  [@@deriving show { with_path = false }, sexp]
+end
 
 (* type variable_definition = { name : string; ty : graphql_type} *)
 (* [@@deriving show { with_path = false }, sexp] *)
@@ -103,56 +102,67 @@ type type_definition =
 (* type operation_type = { name : string; description: string option } *)
 (* [@@deriving show { with_path = false }, sexp] *)
 
-type schema = {
-  query : op_union_enum_value option;
-  mutation : op_union_enum_value option;
-  subscription : op_union_enum_value option;
-  description : string option;
-}
-[@@deriving show { with_path = false }, sexp]
+module Schema = struct
+  type t = {
+    query : BaseValue.t option;
+    mutation : BaseValue.t option;
+    subscription : BaseValue.t option;
+    description : string option;
+  }
+  [@@deriving show { with_path = false }, sexp]
+end
 
-type operation = Query | Mutation | Subscription
-[@@deriving show { with_path = false }, sexp]
+module Operation = struct
+  type t = Query | Mutation | Subscription
+  [@@deriving show { with_path = false }, sexp]
+end
 
-type sub_field = { name : string; fields : selection_field list }
-[@@deriving show { with_path = false }, sexp]
+module SelectionField = struct
+  type t = Field of string | SpreadField of string | SubField of sub_field
+  [@@deriving show { with_path = false }, sexp]
 
-and selection_field =
-  | Field of string
-  | SpreadField of string
-  | SubField of sub_field
-[@@deriving show { with_path = false }, sexp]
+  and sub_field = { name : string; fields : t list }
+  [@@deriving show { with_path = false }, sexp]
+end
 
 (* and selection_set = { *)
 (*   set: selection_field list *)
 (* } *)
 (* [@@deriving show { with_path = false }, sexp] *)
 
-type operation_definition = {
-  name : string;
-  operation : operation;
-  args : operation_arg list option;
-  variables : argument_definition list option;
-  selection : selection_field list;
-}
-[@@deriving show { with_path = false }, sexp]
+module OperationDefinition = struct
+  type t = {
+    name : string;
+    operation : Operation.t;
+    args : OperationArg.t list option;
+    variables : ArgumentDefiniton.t list option;
+    selection : SelectionField.t list;
+  }
+  [@@deriving show { with_path = false }, sexp]
+end
 
-type fragment_definition = {
-  name : string;
-  type_condition : string;
-  selection : selection_field list;
-}
-[@@deriving show { with_path = false }, sexp]
+module FragmentDefinition = struct
+  type t = {
+    name : string;
+    type_condition : string;
+    selection : SelectionField.t list;
+  }
+  [@@deriving show { with_path = false }, sexp]
+end
 
-type executable_definition =
-  | OperationDefinition of operation_definition
-  | FragmentDefinition of fragment_definition
-[@@deriving show { with_path = false }, sexp]
+module ExecutableDefinition = struct
+  type t =
+    | OperationDefinition of OperationDefinition.t
+    | FragmentDefinition of FragmentDefinition.t
+  [@@deriving show { with_path = false }, sexp]
+end
 
-type definition =
-  | TypeDefinition of type_definition
-  | Schema of schema
-  | ExecutableDefinition of executable_definition
-[@@deriving show { with_path = false }, sexp]
+module Definition = struct
+  type t =
+    | TypeDefinition of TypeDefinition.t
+    | Schema of Schema.t
+    | ExecutableDefinition of ExecutableDefinition.t
+  [@@deriving show { with_path = false }, sexp]
+end
 
-type node = Document of definition list
+type node = Document of Definition.t list

@@ -1,5 +1,6 @@
 open Base
 open Core
+open Ast
 
 let ( let* ) res f = Base.Result.bind res ~f
 let ( let+ ) res f = Option.bind res ~f
@@ -110,7 +111,7 @@ and parse_definition parser =
   | Token.Enum -> parse_enum (next_token parser) description
   | Token.Input -> parse_input_type (next_token parser) description
   | Token.Comment comment ->
-      Ok (parser, Ast.TypeDefinition (Ast.Comment comment))
+      Ok (parser, Definition.TypeDefinition (TypeDefinition.Comment comment))
   | Token.Query | Token.Mutation
   | Token.Name "query"
   | Token.Name "mutation"
@@ -137,8 +138,8 @@ and parse_fragment parser =
         if ok then
           Ok
             ( parser,
-              Ast.ExecutableDefinition
-                (Ast.FragmentDefinition { name; type_condition; selection }) )
+              Definition.ExecutableDefinition
+                (ExecutableDefinition.FragmentDefinition { name; type_condition; selection }) )
         else
           failwith_parser_error parser
             "expected right brace after fragment seletion"
@@ -200,12 +201,10 @@ and parse_query parser =
           | true ->
               Ok
                 ( parser,
-                  Ast.ExecutableDefinition
-                    (Ast.OperationDefinition
-                       Ast.
-                         {
+                    Definition.ExecutableDefinition(
+                        ExecutableDefinition.OperationDefinition {
                            name = operation;
-                           operation = Ast.Query;
+                           operation = Operation.Query;
                            args;
                            variables = vars;
                            selection;
@@ -218,13 +217,13 @@ and parse_selection_set parser =
     | Token.Name _ ->
         let parser = next_token parser in
         let* parser, name = parse_name parser in
-        let ss = Ast.Field name in
+        let ss = SelectionField.Field name in
         parse_selection_set' parser (ss :: set)
     | Token.Ellipsis ->
         let parser = next_token parser in
         let parser = next_token parser in
         let* parser, name = parse_name parser in
-        let ss = Ast.SpreadField name in
+        let ss = SelectionField.SpreadField name in
         parse_selection_set' parser (ss :: set)
     | _ -> Ok (parser, set)
   in
@@ -244,7 +243,7 @@ and parse_args parser =
             let parser = next_token parser in
 
             let* parser, var_name = parse_name parser in
-            let arg = Ast.{ name; value = var_name } in
+            let arg = OperationArg.{ name; value = var_name } in
             parse_args' parser (arg :: args)
         | _ ->
             failwith_parser_error parser
@@ -270,7 +269,7 @@ and parse_variables parser =
             let parser = next_token parser in
 
             let* parser, gql_type = parse_graphql_type parser in
-            let var = Ast.{ name; ty = gql_type; description = None } in
+            let var = ArgumentDefiniton.{ name; ty = gql_type; description = None } in
             parse_variables' parser (var :: vars)
         | _ ->
             failwith_parser_error parser
@@ -291,7 +290,7 @@ and parse_input_type parser description =
   match (parser, ok) with
   | parser, true ->
       let* parser, fields = parse_type_definition parser in
-      Ok (parser, Ast.TypeDefinition (Ast.Input { name; fields; description }))
+      Ok (parser, Definition.TypeDefinition (TypeDefinition.Input { name; fields; description }))
   | _, false -> Error "expected left brace"
 
 and parse_enum parser description =
@@ -314,12 +313,12 @@ and parse_enum parser description =
       | _ ->
           let* parser, name = parse_name parser in
           let parser = next_token parser in
-          parse_enum_value parser (Ast.{ name; description = enum_desc } :: vals)
+          parse_enum_value parser (BaseValue.{ name; description = enum_desc } :: vals)
     in
     let* parser, vals = parse_enum_value parser [] in
     Ok
       ( parser,
-        Ast.TypeDefinition (Ast.Enum { name; values = vals; description }) )
+        Definition.TypeDefinition (TypeDefinition.Enum EnumType.{ name; values = vals; description }) )
 
 and parse_union parser description =
   let* parser, union_name = parse_name parser in
@@ -350,17 +349,17 @@ and parse_union parser description =
           let parser = next_token parser in
           let parser = next_token parser in
           let* parser, name = parse_name parser in
-          parse_member parser (Ast.{ name; description = union_desc } :: members)
+          parse_member parser (BaseValue.{  name; description = union_desc } :: members)
       | Token.Comment _ -> parse_member (next_token parser) members
       | _ -> Ok (parser, List.rev members)
     in
     let* parser, members =
-      parse_member parser [ Ast.{ name; description = first_union_desc } ]
+      parse_member parser [ BaseValue.{ name; description = first_union_desc } ]
     in
     Ok
       ( parser,
-        Ast.TypeDefinition
-          (Ast.Union { name = union_name; members; description }) )
+        Definition.TypeDefinition
+          (TypeDefinition.Union { name = union_name; members; description }) )
 
 and parse_description parser =
   match parser.cur_token with
@@ -369,7 +368,7 @@ and parse_description parser =
 
 and parse_scalar parser description =
   let* parser, name = parse_name parser in
-  Ok (parser, Ast.TypeDefinition (Ast.Scalar { name; description }))
+  Ok (parser, Definition.TypeDefinition (TypeDefinition.Scalar {  name; description = description }))
 
 and parse_schema parser description =
   match parser.cur_token with
@@ -402,7 +401,7 @@ and parse_schema_def parser description =
   | Token.RightBrace ->
       Ok
         ( next_token parser,
-          Ast.Schema
+          Definition.Schema
             {
               query = make_schema_op query;
               mutation = make_schema_op mutation;
@@ -413,16 +412,14 @@ and parse_schema_def parser description =
 
 and make_schema_op op =
   match op with
-  | Some (_, op) ->
+  | Some (_, o) ->
       (* let () = Printf.printf "%s -> %s\n" value ty in *)
-      Some Ast.{ name = op.name; description = op.description }
+      Some BaseValue.{ name = o.name; description = o.description }
   | None -> None
 
 and name_is a b = String.compare a b = 0
 
-and parse_schema_op_type parser :
-    (t * (string * Ast.op_union_enum_value), string) result =
-  (* and parse_schema_op_type parser = *)
+  and parse_schema_op_type parser =
   let parser, description =
     match parse_description parser with
     | parser, Some d ->
@@ -438,7 +435,7 @@ and parse_schema_op_type parser :
       let* parser, name = parse_name parser in
       Ok
         ( parser,
-          (op_name, (Ast.{ name; description } : Ast.op_union_enum_value)) )
+          (op_name, BaseValue.{  name; description }) )
   | _ ->
       Error
         (Printf.sprintf "parse_schema_op_type: expected colon: %s"
@@ -450,7 +447,7 @@ and parse_type parser description =
   match (parser, ok) with
   | parser, true ->
       let* parser, fields = parse_type_definition parser in
-      Ok (parser, Ast.TypeDefinition (Ast.Object { name; fields; description }))
+      Ok (parser, Definition.TypeDefinition (TypeDefinition.Object { name; fields; description }))
   | _, false -> Error "expected left brace"
 
 and parse_type_definition parser =
@@ -482,13 +479,13 @@ and parse_type_definition parser =
             let parser = next_token parser in
             let parser = next_token parser in
             let* parser, ty = parse_graphql_type parser in
-            let field = Ast.{ name; args; ty; description } in
+            let field = Field.{ name; args; ty; description } in
             parse_type_def' parser (field :: fields)
         | Token.Name _ ->
             let parser = next_token parser in
             let* parser, ty = parse_graphql_type parser in
 
-            let field = Ast.{ name; args; ty; description } in
+            let field = Field.{ name; args; ty; description } in
             parse_type_def' parser (field :: fields)
         | _ -> failwith "parse_type_definition: expected a name or a colon")
     | _ ->
@@ -506,8 +503,7 @@ and parse_type_definition parser =
   | _, false -> Error "expected right brace"
 
 and parse_field_args parser =
-  let rec parse_field_args' (parser : t) (args : Ast.argument_definition list) :
-      t * Ast.argument_definition list option =
+  let rec parse_field_args' parser  args =
     let parser = chomp parser Token.Comma in
     let parser = chomp_comment parser in
     match parser.peek_token with
@@ -539,7 +535,7 @@ and parse_field_args parser =
                   | Error _ -> failwith "error parsing graphql type"
                 in
                 let parser, arg =
-                  (parser, Ast.{ name; ty = gql_type; description = None })
+                  (parser, ArgumentDefiniton.{ name; ty = gql_type; description = None })
                 in
                 parse_field_args' parser (arg :: args)
             | _ -> failwith "parse_field_args")
@@ -567,8 +563,8 @@ and parse_graphql_type parser =
           match parser.peek_token with
           | Token.Exclamation ->
               let parser = next_token parser in
-              Ok (parser, Ast.NonNullType (Ast.ListType gql_type))
-          | _ -> Ok (parser, Ast.ListType gql_type))
+              Ok (parser, GraphqlType.NonNullType (GraphqlType.ListType gql_type))
+          | _ -> Ok (parser, GraphqlType.ListType gql_type))
       | _ ->
           Error
             "parse_graphql_type: expected closing right bracket for list type")
@@ -578,8 +574,8 @@ and parse_graphql_type parser =
       | Token.Exclamation ->
           let parser = next_token parser in
 
-          Ok (parser, Ast.NonNullType (Ast.NamedType name))
-      | _ -> Ok (parser, Ast.NamedType name))
+          Ok (parser, GraphqlType.NonNullType (GraphqlType.NamedType name))
+      | _ -> Ok (parser, GraphqlType.NamedType name))
   | _ -> Error "parse_graphql_type: expected a name or left bracket"
 
 and parse_name parser =
@@ -603,13 +599,13 @@ let parse_document input =
   let document = parse parser in
   document
 
-let show_type_definition = Ast.show_type_definition
+let show_type_definition = TypeDefinition.show
 
 let string_of_definition = function
-  | Ast.TypeDefinition def -> Fmt.str "  %s@." (show_type_definition def)
-  | Ast.Schema s -> Fmt.str "  %s@." (Ast.show_schema s)
-  | Ast.ExecutableDefinition e ->
-      Fmt.str "  %s@." (Ast.show_executable_definition e)
+  | Definition.TypeDefinition def -> Fmt.str "  %s@." (show_type_definition def)
+  | Definition.Schema s -> Fmt.str "  %s@." (Schema.show s)
+  | Definition.ExecutableDefinition e ->
+      Fmt.str "  %s@." (ExecutableDefinition.show e)
 
 let print_node = function
   | Ast.Document document ->
@@ -717,7 +713,9 @@ module Test = struct
                   }
 
         type Mutation {
-        fooMut(fooArg1: String, fooArg2: Int!): [String!]!
+        fooMut(fooArg1: String, 
+        "arg description"
+        fooArg2: Int!): [String!]!
         bar(barArg1: Boolean!
             barArg2: Boolean): [String!]!
 }

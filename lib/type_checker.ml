@@ -1,4 +1,5 @@
 open Base
+    open Ast
 
 
 let rec type_check node =
@@ -19,11 +20,11 @@ and type_check_document doc env=
 
 and type_check_def def env =
   match def with
-  | Ast.TypeDefinition td -> type_check_type_def td env
+  | Definition.TypeDefinition td -> type_check_type_def td env
   | _ -> failwith "unexpected def"
 
 and type_check_type_def td _env =
-  Fmt.pr "%s@"(Ast.show_type_definition td)
+  Fmt.pr "%s@"(TypeDefinition.show td)
 
 
 module Test = struct
