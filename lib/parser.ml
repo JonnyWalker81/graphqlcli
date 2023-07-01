@@ -139,7 +139,8 @@ and parse_fragment parser =
           Ok
             ( parser,
               Definition.ExecutableDefinition
-                (ExecutableDefinition.FragmentDefinition { name; type_condition; selection }) )
+                (ExecutableDefinition.FragmentDefinition
+                   { name; type_condition; selection }) )
         else
           failwith_parser_error parser
             "expected right brace after fragment seletion"
@@ -201,14 +202,15 @@ and parse_query parser =
           | true ->
               Ok
                 ( parser,
-                    Definition.ExecutableDefinition(
-                        ExecutableDefinition.OperationDefinition {
-                           name = operation;
-                           operation = Operation.Query;
-                           args;
-                           variables = vars;
-                           selection;
-                         }) )))
+                  Definition.ExecutableDefinition
+                    (ExecutableDefinition.OperationDefinition
+                       {
+                         name = operation;
+                         operation = Operation.Query;
+                         args;
+                         variables = vars;
+                         selection;
+                       }) )))
   | _ -> failwith_parser_error parser "parse_query: expected left brace"
 
 and parse_selection_set parser =
@@ -269,7 +271,9 @@ and parse_variables parser =
             let parser = next_token parser in
 
             let* parser, gql_type = parse_graphql_type parser in
-            let var = ArgumentDefiniton.{ name; ty = gql_type; description = None } in
+            let var =
+              ArgumentDefiniton.{ name; ty = gql_type; description = None }
+            in
             parse_variables' parser (var :: vars)
         | _ ->
             failwith_parser_error parser
@@ -290,7 +294,10 @@ and parse_input_type parser description =
   match (parser, ok) with
   | parser, true ->
       let* parser, fields = parse_type_definition parser in
-      Ok (parser, Definition.TypeDefinition (TypeDefinition.Input { name; fields; description }))
+      Ok
+        ( parser,
+          Definition.TypeDefinition
+            (TypeDefinition.Input { name; fields; description }) )
   | _, false -> Error "expected left brace"
 
 and parse_enum parser description =
@@ -313,12 +320,14 @@ and parse_enum parser description =
       | _ ->
           let* parser, name = parse_name parser in
           let parser = next_token parser in
-          parse_enum_value parser (BaseValue.{ name; description = enum_desc } :: vals)
+          parse_enum_value parser
+            (BaseValue.{ name; description = enum_desc } :: vals)
     in
     let* parser, vals = parse_enum_value parser [] in
     Ok
       ( parser,
-        Definition.TypeDefinition (TypeDefinition.Enum EnumType.{ name; values = vals; description }) )
+        Definition.TypeDefinition
+          (TypeDefinition.Enum EnumType.{ name; values = vals; description }) )
 
 and parse_union parser description =
   let* parser, union_name = parse_name parser in
@@ -349,7 +358,8 @@ and parse_union parser description =
           let parser = next_token parser in
           let parser = next_token parser in
           let* parser, name = parse_name parser in
-          parse_member parser (BaseValue.{  name; description = union_desc } :: members)
+          parse_member parser
+            (BaseValue.{ name; description = union_desc } :: members)
       | Token.Comment _ -> parse_member (next_token parser) members
       | _ -> Ok (parser, List.rev members)
     in
@@ -368,7 +378,9 @@ and parse_description parser =
 
 and parse_scalar parser description =
   let* parser, name = parse_name parser in
-  Ok (parser, Definition.TypeDefinition (TypeDefinition.Scalar {  name; description = description }))
+  Ok
+    ( parser,
+      Definition.TypeDefinition (TypeDefinition.Scalar { name; description }) )
 
 and parse_schema parser description =
   match parser.cur_token with
@@ -419,7 +431,7 @@ and make_schema_op op =
 
 and name_is a b = String.compare a b = 0
 
-  and parse_schema_op_type parser =
+and parse_schema_op_type parser =
   let parser, description =
     match parse_description parser with
     | parser, Some d ->
@@ -433,9 +445,7 @@ and name_is a b = String.compare a b = 0
       let parser = next_token parser in
       let parser = next_token parser in
       let* parser, name = parse_name parser in
-      Ok
-        ( parser,
-          (op_name, BaseValue.{  name; description }) )
+      Ok (parser, (op_name, BaseValue.{ name; description }))
   | _ ->
       Error
         (Printf.sprintf "parse_schema_op_type: expected colon: %s"
@@ -447,7 +457,10 @@ and parse_type parser description =
   match (parser, ok) with
   | parser, true ->
       let* parser, fields = parse_type_definition parser in
-      Ok (parser, Definition.TypeDefinition (TypeDefinition.Object { name; fields; description }))
+      Ok
+        ( parser,
+          Definition.TypeDefinition
+            (TypeDefinition.Object { name; fields; description }) )
   | _, false -> Error "expected left brace"
 
 and parse_type_definition parser =
@@ -503,7 +516,7 @@ and parse_type_definition parser =
   | _, false -> Error "expected right brace"
 
 and parse_field_args parser =
-  let rec parse_field_args' parser  args =
+  let rec parse_field_args' parser args =
     let parser = chomp parser Token.Comma in
     let parser = chomp_comment parser in
     match parser.peek_token with
@@ -535,7 +548,9 @@ and parse_field_args parser =
                   | Error _ -> failwith "error parsing graphql type"
                 in
                 let parser, arg =
-                  (parser, ArgumentDefiniton.{ name; ty = gql_type; description = None })
+                  ( parser,
+                    ArgumentDefiniton.
+                      { name; ty = gql_type; description = None } )
                 in
                 parse_field_args' parser (arg :: args)
             | _ -> failwith "parse_field_args")
@@ -563,7 +578,8 @@ and parse_graphql_type parser =
           match parser.peek_token with
           | Token.Exclamation ->
               let parser = next_token parser in
-              Ok (parser, GraphqlType.NonNullType (GraphqlType.ListType gql_type))
+              Ok
+                (parser, GraphqlType.NonNullType (GraphqlType.ListType gql_type))
           | _ -> Ok (parser, GraphqlType.ListType gql_type))
       | _ ->
           Error
