@@ -26,8 +26,8 @@ type field = {
 }
 [@@deriving show { with_path = false }, sexp]
 
-type scalar_type = { name : string; description : string option }
-[@@deriving show { with_path = false }, sexp]
+(* type scalar_type = { name : string; description : string option } *)
+(* [@@deriving show { with_path = false }, sexp] *)
 
 type object_type = {
   name : string;
@@ -42,19 +42,19 @@ type object_type = {
 (* } *)
 (* [@@deriving show { with_path = false }, sexp] *)
 
-type union_enum_value = { name : string; description : string option }
+type op_union_enum_value = { name : string; description : string option }
 [@@deriving show { with_path = false }, sexp]
 
 type union_type = {
   name : string;
-  members : union_enum_value list;
+  members : op_union_enum_value list;
   description : string option;
 }
 [@@deriving show { with_path = false }, sexp]
 
 type enum_type = {
   name : string;
-  values : union_enum_value list;
+  values : op_union_enum_value list;
   description : string option;
 }
 [@@deriving show { with_path = false }, sexp]
@@ -89,7 +89,7 @@ type operation_arg = { name : string; value : string }
 [@@deriving show { with_path = false }, sexp]
 
 type type_definition =
-  | Scalar of scalar_type
+  | Scalar of op_union_enum_value
   | Object of object_type
   | Union of union_type
   | Enum of enum_type
@@ -100,13 +100,13 @@ type type_definition =
 (* type variable_definition = { name : string; ty : graphql_type} *)
 (* [@@deriving show { with_path = false }, sexp] *)
 
-type operation_type = { name : string }
-[@@deriving show { with_path = false }, sexp]
+(* type operation_type = { name : string; description: string option } *)
+(* [@@deriving show { with_path = false }, sexp] *)
 
 type schema = {
-  query : operation_type option;
-  mutation : operation_type option;
-  subscription : operation_type option;
+  query : op_union_enum_value option;
+  mutation : op_union_enum_value option;
+  subscription : op_union_enum_value option;
   description : string option;
 }
 [@@deriving show { with_path = false }, sexp]

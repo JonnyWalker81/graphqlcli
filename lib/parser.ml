@@ -385,7 +385,10 @@ and parse_schema_def parser description =
         match parser.peek_token with
         | Token.RightBrace -> Ok (parser, List.rev_append [ op ] fields)
         | Token.Name _ -> parse_schema_def' (next_token parser) (op :: fields)
-        | _ -> failwith "parse_schema_def: unexpected token")
+        | Token.StringLiteral _ ->
+            parse_schema_def' (next_token parser) (op :: fields)
+        | _ -> failwith_parser_error parser "parse_schema_def: unexpected token"
+        )
   in
   let* parser, fields = parse_schema_def' parser [] in
   let query = List.find fields ~f:(fun (name, _) -> name_is name "query") in
@@ -410,21 +413,32 @@ and parse_schema_def parser description =
 
 and make_schema_op op =
   match op with
-  | Some (name, ty) ->
-      let () = Printf.printf "%s -> %s\n" name ty in
-      Some Ast.{ name = ty }
+  | Some (_, op) ->
+      (* let () = Printf.printf "%s -> %s\n" value ty in *)
+      Some Ast.{ name = op.name; description = op.description }
   | None -> None
 
 and name_is a b = String.compare a b = 0
 
-and parse_schema_op_type parser =
+and parse_schema_op_type parser :
+    (t * (string * Ast.op_union_enum_value), string) result =
+  (* and parse_schema_op_type parser = *)
+  let parser, description =
+    match parse_description parser with
+    | parser, Some d ->
+        let parser = next_token parser in
+        (parser, Some d)
+    | _ -> (parser, None)
+  in
   let* parser, op_name = parse_name parser in
   match parser.peek_token with
   | Token.Colon ->
       let parser = next_token parser in
       let parser = next_token parser in
       let* parser, name = parse_name parser in
-      Ok (parser, (op_name, name))
+      Ok
+        ( parser,
+          (op_name, (Ast.{ name; description } : Ast.op_union_enum_value)) )
   | _ ->
       Error
         (Printf.sprintf "parse_schema_op_type: expected colon: %s"
@@ -669,8 +683,10 @@ module Test = struct
   let%expect_test "testDocumentSchema" =
     let input =
       {|
+              "schema description"
                     schema {
                       query: MyQuery
+                      "mutation description"
                       mutation: MyMutation
                     }
 
@@ -680,12 +696,11 @@ module Test = struct
     expect_document input;
     [%expect
       {|
-         mutation -> MyMutation
-         query -> MyQuery
          Document: [
-             { query = (Some { name = "MyQuery" });
-           mutation = (Some { name = "MyMutation" }); subscription = None;
-           description = None }
+             { query = (Some { name = "MyQuery"; description = None });
+           mutation =
+           (Some { name = "MyMutation"; description = (Some "mutation description") });
+           subscription = None; description = (Some "schema description") }
 
              (Scalar { name = "Status"; description = None })
 
