@@ -97,13 +97,17 @@ let read_multiline_string lexer =
   let rec loop lexer str =
     match lexer.ch with
     | '\x00' -> (read_char lexer, str)
-    | _ ->
-      let lexer, is_quote_one = peek_is lexer 1 '"' in
+    | '"' -> let lexer, is_quote_one = peek_is lexer 1 '"' in
       let lexer, is_quote_two = peek_is lexer 2 '"' in
-      if is_quote_one && is_quote_two then (read_char lexer, str)
+      if is_quote_one && is_quote_two then
+        let lexer = read_char lexer in
+        let lexer = read_char lexer in
+        (read_char lexer, str)
       else
-        let str = str ^ Char.escaped lexer.ch in
-        loop (read_char lexer) str
+        failwith "expeted ending of block quote"
+    | _ ->
+      let str = str ^ Char.escaped lexer.ch in
+      loop (read_char lexer) str
   in
   let lexer, s = loop lexer "" in
   (lexer, Token.StringLiteral s)
@@ -111,8 +115,13 @@ let read_multiline_string lexer =
 let read_string lexer =
   let lexer, is_quote_one = peek_is lexer 1 '"' in
   let lexer, is_quote_two = peek_is lexer 2 '"' in
-  if is_quote_one && is_quote_two then read_multiline_string lexer
+  if is_quote_one && is_quote_two then
+    let lexer = read_char lexer in
+    let lexer = read_char lexer in
+    let lexer = read_char lexer in
+    read_multiline_string lexer
   else
+    let lexer = read_char lexer in
     let rec loop lexer str =
       match lexer.ch with
       | '"' | '\x00' -> (read_char lexer, str)
@@ -155,7 +164,7 @@ let next_token lexer =
   | ']' -> (read_char lexer, Token.RightBracket)
   | '!' -> (read_char lexer, Token.Exclamation)
   | '|' -> (read_char lexer, Token.Pipe)
-  | '"' -> read_string (read_char lexer)
+  | '"' -> read_string lexer
   | '#' -> read_comment (read_char lexer)
   | '.' -> read_ellipsis lexer
   | '\x00' -> (read_char lexer, Token.Eof)
@@ -329,9 +338,7 @@ type Foo {
       Token.RightParen
       Token.Colon
       (Token.Name "String")
-      (Token.StringLiteral "")
       (Token.StringLiteral "This is a multi\\n         line string in graphQL")
-      (Token.StringLiteral "")
       Token.Eof
       Line Numbers: 39
 |}]

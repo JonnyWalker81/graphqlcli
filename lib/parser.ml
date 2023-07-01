@@ -519,6 +519,12 @@ and parse_field_args parser =
   let rec parse_field_args' parser args =
     let parser = chomp parser Token.Comma in
     let parser = chomp_comment parser in
+    let parser, arg_desc =
+      match parser.peek_token with
+      | Token.StringLiteral _ -> parse_description (next_token parser)
+      | _ -> (parser, None)
+    in
+
     match parser.peek_token with
     | Token.RightParen ->
         let parser =
@@ -550,7 +556,7 @@ and parse_field_args parser =
                 let parser, arg =
                   ( parser,
                     ArgumentDefiniton.
-                      { name; ty = gql_type; description = None } )
+                      { name; ty = gql_type; description = arg_desc } )
                 in
                 parse_field_args' parser (arg :: args)
             | _ -> failwith "parse_field_args")
@@ -729,7 +735,7 @@ module Test = struct
                   }
 
         type Mutation {
-        fooMut(fooArg1: String, 
+        fooMut(fooArg1: String
         "arg description"
         fooArg2: Int!): [String!]!
         bar(barArg1: Boolean!
@@ -764,7 +770,7 @@ module Test = struct
               (Some [{ name = "fooArg1"; ty = (NamedType "String");
                        description = None };
                       { name = "fooArg2"; ty = (NonNullType (NamedType "Int"));
-                        description = None }
+                        description = (Some "arg description") }
                       ]);
               ty = (NonNullType (ListType (NonNullType (NamedType "String"))));
               description = None };
@@ -787,7 +793,7 @@ module Test = struct
       {|
            "union description"
             union foo = 
-                "bar union desc"
+                """bar union desc"""
                 Bar 
               | Foobar
                      |}
@@ -891,8 +897,10 @@ module Test = struct
   let%expect_test "testInputType" =
     let input =
       {|
+        """Input description"""
               input QueryInput {
            category: String
+        "input field desc"
            name: String!
            labels: [String!]
      }
@@ -909,12 +917,12 @@ module Test = struct
                 [{ name = "category"; args = None; ty = (NamedType "String");
                    description = None };
                   { name = "name"; args = None; ty = (NonNullType (NamedType "String"));
-                    description = None };
+                    description = (Some "input field desc") };
                   { name = "labels"; args = None;
                     ty = (ListType (NonNullType (NamedType "String")));
                     description = None }
                   ];
-                description = None })
+                description = (Some "Input description") })
 
            ] |}]
 
