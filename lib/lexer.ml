@@ -165,6 +165,7 @@ let next_token lexer =
   | '!' -> (read_char lexer, Token.Exclamation)
   | '|' -> (read_char lexer, Token.Pipe)
   | '&' -> (read_char lexer, Token.Ampersand)
+  | '@' -> (read_char lexer, Token.At)
   | '"' -> read_string lexer
   | '#' -> read_comment (read_char lexer)
   | '.' -> read_ellipsis lexer
@@ -250,6 +251,12 @@ type Foo {
 
         """This is a multi
          line string in graphQL"""
+       type Foo implements Bar & Baz {
+          foo: String
+       }
+
+       directive @example on FIELD
+
 |}
     in
     let lexer, tokens = tokenize input in
@@ -340,7 +347,23 @@ type Foo {
       Token.Colon
       (Token.Name "String")
       (Token.StringLiteral "This is a multi\\n         line string in graphQL")
+      Token.Type
+      (Token.Name "Foo")
+      (Token.Name "implements")
+      (Token.Name "Bar")
+      Token.Ampersand
+      (Token.Name "Baz")
+      Token.LeftBrace
+      (Token.Name "foo")
+      Token.Colon
+      (Token.Name "String")
+      Token.RightBrace
+      (Token.Name "directive")
+      Token.At
+      (Token.Name "example")
+      (Token.Name "on")
+      (Token.Name "FIELD")
       Token.Eof
-      Line Numbers: 39
+      Line Numbers: 44
 |}]
 end

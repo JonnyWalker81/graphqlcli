@@ -26,6 +26,7 @@ type t =
   | Ellipsis
   | Pipe
   | Ampersand
+  | At
   | String
   | StringLiteral of string
   | Float

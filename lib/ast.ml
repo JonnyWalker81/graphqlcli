@@ -176,11 +176,57 @@ module ExecutableDefinition = struct
   [@@deriving show { with_path = false }, sexp]
 end
 
+module TypeSystemDirectiveLocation = struct
+  type t =
+    | SCHEMA
+    | SCALAR
+    | OBJECT
+    | FIELD_DEFINITION
+    | ARGUMENT_DEFINITION
+    | INTERFACE
+    | UNION
+    | ENUM
+    | ENUM_VALUE
+    | INPUT_OBJECT
+    | INPUT_FIELD_DEFINITION
+  [@@deriving show { with_path = false }, sexp]
+end
+
+module ExecutableDirectiveLocation = struct
+  type t =
+    | QUERY
+    | MUTATION
+    | SUBSCRIPTION
+    | FIELD
+    | FRAGMENT_DEFINITION
+    | FRAGMENT_SPREAD
+    | INLINE_FRAGMENT
+  [@@deriving show { with_path = false }, sexp]
+end
+
+module DirectiveLocation = struct
+  type t =
+    | ExecutableDirectiveLocation of ExecutableDirectiveLocation.t
+    | TypeSystemDirectiveLocation of TypeSystemDirectiveLocation.t
+  [@@deriving show { with_path = false }, sexp]
+end
+
+module Directive = struct
+  type t = {
+    name : string;
+    args : ArgumentDefiniton.t list option;
+    locations : DirectiveLocation.t list;
+    description : string option;
+  }
+  [@@deriving show { with_path = false }, sexp]
+end
+
 module Definition = struct
   type t =
     | TypeDefinition of TypeDefinition.t
     | Schema of Schema.t
     | ExecutableDefinition of ExecutableDefinition.t
+    | Directive of Directive.t
   [@@deriving show { with_path = false }, sexp]
 end
 

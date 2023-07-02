@@ -59,6 +59,12 @@ let expect_peek_colon parser =
 let expect_peek_equal parser =
   expect_peek parser (function Token.Equal -> true | _ -> false)
 
+let expect_peek_at parser =
+  expect_peek parser (function Token.At -> true | _ -> false)
+
+let expect_peek_on parser =
+  expect_peek parser (function Token.Name "on" -> true | _ -> false)
+
 let peek_is parser token = phys_equal parser.peek_token token
 
 let peek_token_is_name parser =
@@ -74,6 +80,41 @@ let current_token_is_name parser =
 
 let rec skip_while parser condition =
   if condition parser then skip_while (next_token parser) condition else parser
+
+let name_to_directive_location name =
+  match name with
+  | Token.Name "FIELD_DEFINITION" ->
+      DirectiveLocation.TypeSystemDirectiveLocation
+        TypeSystemDirectiveLocation.FIELD_DEFINITION
+  | Token.Name "SCHEMA" ->
+      DirectiveLocation.TypeSystemDirectiveLocation
+        TypeSystemDirectiveLocation.SCHEMA
+  | Token.Name "SCALAR" ->
+      DirectiveLocation.TypeSystemDirectiveLocation
+        TypeSystemDirectiveLocation.SCALAR
+  | Token.Name "OBJECT" ->
+      DirectiveLocation.TypeSystemDirectiveLocation
+        TypeSystemDirectiveLocation.OBJECT
+  | Token.Name "ARGUMENT_DEFINITION" ->
+      DirectiveLocation.TypeSystemDirectiveLocation
+        TypeSystemDirectiveLocation.ARGUMENT_DEFINITION
+  | Token.Name "INTERFACE" ->
+      DirectiveLocation.TypeSystemDirectiveLocation
+        TypeSystemDirectiveLocation.INTERFACE
+  | Token.Name "ENUM" ->
+      DirectiveLocation.TypeSystemDirectiveLocation
+        TypeSystemDirectiveLocation.ENUM
+  | Token.Name "ENUM_VALUE" ->
+      DirectiveLocation.TypeSystemDirectiveLocation
+        TypeSystemDirectiveLocation.ENUM_VALUE
+  | Token.Name "INPUT_OBJECT" ->
+      DirectiveLocation.TypeSystemDirectiveLocation
+        TypeSystemDirectiveLocation.INPUT_OBJECT
+  | Token.Name "INPUT_FIELD_DEFINITION" ->
+      DirectiveLocation.TypeSystemDirectiveLocation
+        TypeSystemDirectiveLocation.INPUT_FIELD_DEFINITION
+  | _ ->
+      failwith (Printf.sprintf "unexpected location name: %s" (Token.show name))
 
 let print_parser_state ?(msg = "parser: ") parser =
   Printf.printf "%s: cur: %s, peek: %s\n" msg
@@ -121,10 +162,51 @@ and parse_definition parser =
       parse_executable_document parser
   | Token.Name "fragment" -> parse_fragment (next_token parser)
   | Token.Name "interface" -> parse_interface (next_token parser) description
+  | Token.Name "directive" -> parse_directive parser description
   | _ ->
       failwith
         (Printf.sprintf "unexpected definition: %s"
            (Token.show parser.cur_token))
+
+and parse_directive parser description =
+  let parser, ok = expect_peek_at parser in
+  match ok with
+  | true -> (
+      let parser = next_token parser in
+      let* parser, name = parse_name parser in
+      let parser, args =
+        match parser.peek_token with
+        | Token.LeftParen -> (
+            let parser = next_token parser in
+            match parse_field_args parser with
+            | parser, a -> (parser, a)
+            | _ -> failwith "parse_directive: expected field args")
+        | _ -> (parser, None)
+      in
+      let parser, ok = expect_peek_on parser in
+      match ok with
+      | true ->
+          let parser =
+            match parser.peek_token with
+            | Token.Pipe -> next_token parser
+            | _ -> parser
+          in
+          let rec parse_locations parser locations =
+            match parser.peek_token with
+            | Token.Pipe ->
+                let parser = next_token parser in
+                let loc = name_to_directive_location parser.peek_token in
+                parse_locations (next_token parser) (loc :: locations)
+            | _ ->
+                Ok
+                  ( parser,
+                    Definition.Directive
+                      Directive.{ name; args; locations; description } )
+          in
+          parse_locations (next_token parser)
+            [ name_to_directive_location parser.peek_token ]
+      | false -> failwith_parser_error parser "parse_directive: expected 'on'")
+  | false -> failwith_parser_error parser "parse_directive: expected '@'"
 
 and parse_interface parser description =
   let* parser, name = parse_name parser in
@@ -517,10 +599,11 @@ and parse_type_definition parser =
         let* parser, name = parse_name parser in
         let parser, args =
           match parser.peek_token with
-          | Token.LeftParen ->
+          | Token.LeftParen -> (
               let parser = next_token parser in
-              let parser, args = parse_field_args parser in
-              (parser, args)
+              match parse_field_args parser with
+              | parser, Some args -> (parser, Some args)
+              | _ -> (parser, None))
           | _ -> (parser, None)
         in
 
@@ -665,6 +748,7 @@ let string_of_definition = function
   | Definition.Schema s -> Fmt.str "  %s@." (Schema.show s)
   | Definition.ExecutableDefinition e ->
       Fmt.str "  %s@." (ExecutableDefinition.show e)
+  | Definition.Directive d -> Fmt.str "  %s@." (Directive.show d)
 
 let print_node = function
   | Ast.Document document ->
@@ -1210,6 +1294,84 @@ type Person implements NamedEntity & ValuedEntity{
                description = None }
              ];
            description = None })
+
+      ]
+|}]
+
+  let%expect_test "testDirectives" =
+    let input =
+      {|
+    "directive desc"
+directive @example on FIELD_DEFINITION
+
+|}
+    in
+    expect_document input;
+    [%expect
+      {|
+      Document: [
+          { name = "example"; args = None;
+        locations = [(TypeSystemDirectiveLocation FIELD_DEFINITION)];
+        description = (Some "directive desc") }
+
+      ]
+  |}]
+
+  let%expect_test "testDirectivesMultipleFields" =
+    let input =
+      {|
+    directive @example on
+  | FIELD_DEFINITION
+  | OBJECT
+  | INTERFACE
+
+        type Foo {
+bar: String
+}
+|}
+    in
+    expect_document input;
+    [%expect
+      {|
+      Document: [
+          { name = "example"; args = None;
+        locations =
+        [(TypeSystemDirectiveLocation INTERFACE);
+          (TypeSystemDirectiveLocation OBJECT);
+          (TypeSystemDirectiveLocation FIELD_DEFINITION)];
+        description = None }
+
+          (Object
+         { name = "Foo"; implements = [];
+           fields =
+           [{ name = "bar"; args = None; ty = (NamedType "String");
+              description = None }
+             ];
+           description = None })
+
+      ]
+
+|}]
+
+  let%expect_test "testDirectivesMultipleFields" =
+    let input =
+      {|
+    directive @deprecated(
+  reason: String
+) on FIELD_DEFINITION | ENUM_VALUE
+
+|}
+    in
+    expect_document input;
+    [%expect {|
+      Document: [
+          { name = "deprecated";
+        args =
+        (Some [{ name = "reason"; ty = (NamedType "String"); description = None }]);
+        locations =
+        [(TypeSystemDirectiveLocation ENUM_VALUE);
+          (TypeSystemDirectiveLocation FIELD_DEFINITION)];
+        description = None }
 
       ]
 |}]
