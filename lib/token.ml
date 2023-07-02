@@ -25,6 +25,7 @@ type t =
   | Colon
   | Ellipsis
   | Pipe
+  | Ampersand
   | String
   | StringLiteral of string
   | Float

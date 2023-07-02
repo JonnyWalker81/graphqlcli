@@ -57,8 +57,8 @@ let is_whitespace lexer =
   | ' ' -> (lexer, true)
   | '\t' -> (lexer, true)
   | '\n' ->
-    let lexer = increment_line lexer in
-    (lexer, true)
+      let lexer = increment_line lexer in
+      (lexer, true)
   | '\r' -> (lexer, true)
   | _ -> (lexer, false)
 
@@ -97,17 +97,17 @@ let read_multiline_string lexer =
   let rec loop lexer str =
     match lexer.ch with
     | '\x00' -> (read_char lexer, str)
-    | '"' -> let lexer, is_quote_one = peek_is lexer 1 '"' in
-      let lexer, is_quote_two = peek_is lexer 2 '"' in
-      if is_quote_one && is_quote_two then
-        let lexer = read_char lexer in
-        let lexer = read_char lexer in
-        (read_char lexer, str)
-      else
-        failwith "expeted ending of block quote"
+    | '"' ->
+        let lexer, is_quote_one = peek_is lexer 1 '"' in
+        let lexer, is_quote_two = peek_is lexer 2 '"' in
+        if is_quote_one && is_quote_two then
+          let lexer = read_char lexer in
+          let lexer = read_char lexer in
+          (read_char lexer, str)
+        else failwith "expeted ending of block quote"
     | _ ->
-      let str = str ^ Char.escaped lexer.ch in
-      loop (read_char lexer) str
+        let str = str ^ Char.escaped lexer.ch in
+        loop (read_char lexer) str
   in
   let lexer, s = loop lexer "" in
   (lexer, Token.StringLiteral s)
@@ -126,8 +126,8 @@ let read_string lexer =
       match lexer.ch with
       | '"' | '\x00' -> (read_char lexer, str)
       | _ ->
-        let str = str ^ Char.escaped lexer.ch in
-        loop (read_char lexer) str
+          let str = str ^ Char.escaped lexer.ch in
+          loop (read_char lexer) str
     in
     let lexer, s = loop lexer "" in
     (lexer, Token.StringLiteral s)
@@ -164,13 +164,14 @@ let next_token lexer =
   | ']' -> (read_char lexer, Token.RightBracket)
   | '!' -> (read_char lexer, Token.Exclamation)
   | '|' -> (read_char lexer, Token.Pipe)
+  | '&' -> (read_char lexer, Token.Ampersand)
   | '"' -> read_string lexer
   | '#' -> read_comment (read_char lexer)
   | '.' -> read_ellipsis lexer
   | '\x00' -> (read_char lexer, Token.Eof)
   | ch when is_letter ch ->
-    let lexer, ident = read_identifier lexer in
-    (lexer, Token.lookup_keyword ident)
+      let lexer, ident = read_identifier lexer in
+      (lexer, Token.lookup_keyword ident)
   | _ -> (read_char lexer, Token.Illegal)
 
 let tokenize input =

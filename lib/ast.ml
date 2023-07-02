@@ -31,7 +31,12 @@ end
 (* [@@deriving show { with_path = false }, sexp] *)
 
 module ObjectType = struct
-  type t = { name : string; fields : Field.t list; description : string option }
+  type t = {
+    name : string;
+    implements : string list;
+    fields : Field.t list;
+    description : string option;
+  }
   [@@deriving show { with_path = false }, sexp]
 end
 
@@ -47,12 +52,20 @@ module BaseValue = struct
 end
 
 module UnionType = struct
-  type t = { name : string; members : BaseValue.t list; description : string option }
+  type t = {
+    name : string;
+    members : BaseValue.t list;
+    description : string option;
+  }
   [@@deriving show { with_path = false }, sexp]
 end
 
 module EnumType = struct
-  type t = { name : string; values : BaseValue.t list; description : string option }
+  type t = {
+    name : string;
+    values : BaseValue.t list;
+    description : string option;
+  }
   [@@deriving show { with_path = false }, sexp]
 end
 
@@ -85,10 +98,16 @@ module OperationArg = struct
   [@@deriving show { with_path = false }, sexp]
 end
 
+module InterfaceType = struct
+  type t = { name : string; fields : Field.t list; description : string option }
+  [@@deriving show { with_path = false }, sexp]
+end
+
 module TypeDefinition = struct
   type t =
     | Scalar of BaseValue.t
     | Object of ObjectType.t
+    | Interface of InterfaceType.t
     | Union of UnionType.t
     | Enum of EnumType.t
     | Input of InputType.t

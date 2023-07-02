@@ -1,3 +1,5 @@
+[@@@warning "-27"]
+
 open Base
 open Core
 open Ast
@@ -118,10 +120,23 @@ and parse_definition parser =
   | Token.LeftBrace ->
       parse_executable_document parser
   | Token.Name "fragment" -> parse_fragment (next_token parser)
+  | Token.Name "interface" -> parse_interface (next_token parser) description
   | _ ->
       failwith
         (Printf.sprintf "unexpected definition: %s"
            (Token.show parser.cur_token))
+
+and parse_interface parser description =
+  let* parser, name = parse_name parser in
+  let parser, ok = expect_peek_left_brace parser in
+  match (parser, ok) with
+  | parser, true ->
+      let* parser, fields = parse_type_definition parser in
+      Ok
+        ( parser,
+          Definition.TypeDefinition
+            (TypeDefinition.Interface { name; fields; description }) )
+  | _, false -> Error "parse_interface: expected left brace"
 
 and parse_fragment parser =
   let* parser, name = parse_name parser in
@@ -453,6 +468,7 @@ and parse_schema_op_type parser =
 
 and parse_type parser description =
   let* parser, name = parse_name parser in
+  let* parser, implements = parse_implements parser in
   let parser, ok = expect_peek_left_brace parser in
   match (parser, ok) with
   | parser, true ->
@@ -460,8 +476,29 @@ and parse_type parser description =
       Ok
         ( parser,
           Definition.TypeDefinition
-            (TypeDefinition.Object { name; fields; description }) )
+            (TypeDefinition.Object { name; implements; fields; description }) )
   | _, false -> Error "expected left brace"
+
+and parse_implements parser =
+  match parser.peek_token with
+  | Token.Name "implements" ->
+      let parser = next_token parser in
+      let parser = next_token parser in
+      let rec parse_implements' parser names =
+        let* parser, name = parse_name parser in
+        match parser.peek_token with
+        | Token.LeftBrace ->
+            Ok (parser, List.rev (List.rev_append [ name ] names))
+        | Token.Ampersand ->
+            let parser = next_token parser in
+            let parser = next_token parser in
+            parse_implements' parser (name :: names)
+        | _ ->
+            failwith_parser_error parser
+              "parse_implements': expected &, name or left brace"
+      in
+      parse_implements' parser []
+  | _ -> Ok (parser, [])
 
 and parse_type_definition parser =
   let rec parse_type_def' parser fields =
@@ -671,7 +708,7 @@ module Test = struct
              (Scalar { name = "UUID"; description = (Some "Scalar Description") })
 
              (Object
-            { name = "Query";
+            { name = "Query"; implements = [];
               fields =
               [{ name = "foo"; args = None; ty = (NamedType "String");
                  description = (Some "field description") };
@@ -750,7 +787,7 @@ module Test = struct
           (Scalar { name = "UUID"; description = None })
 
           (Object
-         { name = "Query";
+         { name = "Query"; implements = [];
            fields =
            [{ name = "fooQuery";
               args =
@@ -763,7 +800,7 @@ module Test = struct
            description = None })
 
           (Object
-         { name = "Mutation";
+         { name = "Mutation"; implements = [];
            fields =
            [{ name = "fooMut";
               args =
@@ -792,9 +829,9 @@ module Test = struct
     let input =
       {|
            "union description"
-            union foo = 
+            union foo =
                 """bar union desc"""
-                Bar 
+                Bar
               | Foobar
                      |}
     in
@@ -885,7 +922,7 @@ module Test = struct
                 description = None })
 
                (Object
-              { name = "Mutation";
+              { name = "Mutation"; implements = [];
                 fields =
                 [{ name = "foo"; args = None; ty = (NamedType "String");
                    description = None }
@@ -944,7 +981,7 @@ module Test = struct
 
            Document: [
                (Object
-              { name = "Query";
+              { name = "Query"; implements = [];
                 fields =
                 [{ name = "category";
                    args =
@@ -979,7 +1016,7 @@ module Test = struct
 
            Document: [
                (Object
-              { name = "Query";
+              { name = "Query"; implements = [];
                 fields =
                 [{ name = "category";
                    args =
@@ -1090,4 +1127,90 @@ fragment Actions on Actions {
            [(Field "delete"); (Field "add"); (Field "edit"); (Field "view")] })
 
       ] |}]
+
+  let%expect_test "testInterface" =
+    let input =
+      {|
+        "interface description"
+        interface Foo {
+           bar: String
+           "field desc"
+           baz: String!
+           """field block desc"""
+           var: [String]!
+        }
+|}
+    in
+    expect_document input;
+    [%expect
+      {|
+      Document: [
+          (Interface
+         { name = "Foo";
+           fields =
+           [{ name = "bar"; args = None; ty = (NamedType "String");
+              description = None };
+             { name = "baz"; args = None; ty = (NonNullType (NamedType "String"));
+               description = (Some "field desc") };
+             { name = "var"; args = None;
+               ty = (NonNullType (ListType (NamedType "String")));
+               description = (Some "field block desc") }
+             ];
+           description = (Some "interface description") })
+
+      ]
+
+       |}]
+
+  let%expect_test "testInterfaceImplements" =
+    let input =
+      {|
+type Person implements NamedEntity {
+  name: String
+  age: Int
+}
+|}
+    in
+    expect_document input;
+    [%expect
+      {|
+      Document: [
+          (Object
+         { name = "Person"; implements = ["NamedEntity"];
+           fields =
+           [{ name = "name"; args = None; ty = (NamedType "String");
+              description = None };
+             { name = "age"; args = None; ty = (NamedType "Int");
+               description = None }
+             ];
+           description = None })
+
+      ]
+|}]
+
+  let%expect_test "testInterfaceMultipleImplements" =
+    let input =
+      {|
+type Person implements NamedEntity & ValuedEntity{
+  name: String
+  age: Int
+}
+|}
+    in
+    expect_document input;
+    [%expect
+      {|
+      Document: [
+          (Object
+         { name = "Person"; implements = ["NamedEntity"; "ValuedEntity"];
+           fields =
+           [{ name = "name"; args = None; ty = (NamedType "String");
+              description = None };
+             { name = "age"; args = None; ty = (NamedType "Int");
+               description = None }
+             ];
+           description = None })
+
+      ]
+|}]
 end
