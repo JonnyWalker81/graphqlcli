@@ -174,14 +174,12 @@ and parse_directive parser description =
   | true -> (
       let parser = next_token parser in
       let* parser, name = parse_name parser in
-      let parser, args =
+      let* parser, args =
         match parser.peek_token with
-        | Token.LeftParen -> (
+        | Token.LeftParen ->
             let parser = next_token parser in
-            match parse_field_args parser with
-            | parser, a -> (parser, a)
-            | _ -> failwith "parse_directive: expected field args")
-        | _ -> (parser, None)
+            parse_field_args parser
+        | _ -> Ok (parser, None)
       in
       let parser, ok = expect_peek_on parser in
       match ok with
@@ -597,16 +595,13 @@ and parse_type_definition parser =
     | Token.Name _ | Token.Type | Token.Input -> (
         let parser = next_token parser in
         let* parser, name = parse_name parser in
-        let parser, args =
+        let* parser, args =
           match parser.peek_token with
-          | Token.LeftParen -> (
+          | Token.LeftParen ->
               let parser = next_token parser in
-              match parse_field_args parser with
-              | parser, Some args -> (parser, Some args)
-              | _ -> (parser, None))
-          | _ -> (parser, None)
+              parse_field_args parser
+          | _ -> Ok (parser, None)
         in
-
         match parser.peek_token with
         | Token.Colon ->
             let parser = next_token parser in
@@ -652,27 +647,17 @@ and parse_field_args parser =
             next_token parser
           else parser
         in
-        (parser, Some (List.rev args))
+        Ok (parser, Some (List.rev args))
     | Token.Name _ | Token.Type | Token.Input -> (
         let parser = next_token parser in
         match parser.peek_token with
         | Token.Colon -> (
-            let n = parse_name parser in
-            let parser, name =
-              match n with
-              | Ok (parser, name) -> (parser, name)
-              | Error _ -> failwith "parse_field_arg: error parsing name"
-            in
+            let* parser, name = parse_name parser in
             match parser.peek_token with
             | Token.Colon ->
                 let parser = next_token parser in
                 let parser = next_token parser in
-                let ty = parse_graphql_type parser in
-                let parser, gql_type =
-                  match ty with
-                  | Ok (parser, gql_type) -> (parser, gql_type)
-                  | Error _ -> failwith "error parsing graphql type"
-                in
+                let* parser, gql_type = parse_graphql_type parser in
                 let parser, arg =
                   ( parser,
                     ArgumentDefiniton.
@@ -1363,7 +1348,8 @@ bar: String
 |}
     in
     expect_document input;
-    [%expect {|
+    [%expect
+      {|
       Document: [
           { name = "deprecated";
         args =
