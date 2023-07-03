@@ -8,22 +8,29 @@
 (*   | NonNullListType of graphql_type list *)
 (* [@@deriving show { with_path = false }, sexp] *)
 module GraphqlType = struct
-  type t = NamedType of string | ListType of t | NonNullType of t
+  type t =
+    | NamedType of string
+    | ListType of t
+    | NonNullType of t
   [@@deriving show { with_path = false }, sexp]
 end
 
 module ArgumentDefiniton = struct
-  type t = { name : string; ty : GraphqlType.t; description : string option }
+  type t =
+    { name : string
+    ; ty : GraphqlType.t
+    ; description : string option
+    }
   [@@deriving show { with_path = false }, sexp]
 end
 
 module Field = struct
-  type t = {
-    name : string;
-    args : ArgumentDefiniton.t list option;
-    ty : GraphqlType.t;
-    description : string option;
-  }
+  type t =
+    { name : string
+    ; args : ArgumentDefiniton.t list option
+    ; ty : GraphqlType.t
+    ; description : string option
+    }
   [@@deriving show { with_path = false }, sexp]
 end
 
@@ -31,12 +38,12 @@ end
 (* [@@deriving show { with_path = false }, sexp] *)
 
 module ObjectType = struct
-  type t = {
-    name : string;
-    implements : string list;
-    fields : Field.t list;
-    description : string option;
-  }
+  type t =
+    { name : string
+    ; implements : string list
+    ; fields : Field.t list
+    ; description : string option
+    }
   [@@deriving show { with_path = false }, sexp]
 end
 
@@ -47,35 +54,46 @@ end
 (* [@@deriving show { with_path = false }, sexp] *)
 
 module BaseValue = struct
-  type t = { name : string; description : string option }
+  type t =
+    { name : string
+    ; description : string option
+    }
   [@@deriving show { with_path = false }, sexp]
 end
 
 module UnionType = struct
-  type t = {
-    name : string;
-    members : BaseValue.t list;
-    description : string option;
-  }
+  type t =
+    { name : string
+    ; members : BaseValue.t list
+    ; description : string option
+    }
   [@@deriving show { with_path = false }, sexp]
 end
 
 module EnumType = struct
-  type t = {
-    name : string;
-    values : BaseValue.t list;
-    description : string option;
-  }
+  type t =
+    { name : string
+    ; values : BaseValue.t list
+    ; description : string option
+    }
   [@@deriving show { with_path = false }, sexp]
 end
 
 module InputType = struct
-  type t = { name : string; fields : Field.t list; description : string option }
+  type t =
+    { name : string
+    ; fields : Field.t list
+    ; description : string option
+    }
   [@@deriving show { with_path = false }, sexp]
 end
 
 module ObjectField = struct
-  type t = { name : string; value : ObjectType.t; description : string option }
+  type t =
+    { name : string
+    ; value : ObjectType.t
+    ; description : string option
+    }
   [@@deriving show { with_path = false }, sexp]
 end
 
@@ -94,12 +112,19 @@ end
 
 (* type operation_arg = { name : string; value : object_field_type } *)
 module OperationArg = struct
-  type t = { name : string; value : string }
+  type t =
+    { name : string
+    ; value : string
+    }
   [@@deriving show { with_path = false }, sexp]
 end
 
 module InterfaceType = struct
-  type t = { name : string; fields : Field.t list; description : string option }
+  type t =
+    { name : string
+    ; fields : Field.t list
+    ; description : string option
+    }
   [@@deriving show { with_path = false }, sexp]
 end
 
@@ -122,25 +147,34 @@ end
 (* [@@deriving show { with_path = false }, sexp] *)
 
 module Schema = struct
-  type t = {
-    query : BaseValue.t option;
-    mutation : BaseValue.t option;
-    subscription : BaseValue.t option;
-    description : string option;
-  }
+  type t =
+    { query : BaseValue.t option
+    ; mutation : BaseValue.t option
+    ; subscription : BaseValue.t option
+    ; description : string option
+    }
   [@@deriving show { with_path = false }, sexp]
 end
 
 module Operation = struct
-  type t = Query | Mutation | Subscription
+  type t =
+    | Query
+    | Mutation
+    | Subscription
   [@@deriving show { with_path = false }, sexp]
 end
 
 module SelectionField = struct
-  type t = Field of string | SpreadField of string | SubField of sub_field
+  type t =
+    | Field of string
+    | SpreadField of string
+    | SubField of sub_field
   [@@deriving show { with_path = false }, sexp]
 
-  and sub_field = { name : string; fields : t list }
+  and sub_field =
+    { name : string
+    ; fields : t list
+    }
   [@@deriving show { with_path = false }, sexp]
 end
 
@@ -150,22 +184,22 @@ end
 (* [@@deriving show { with_path = false }, sexp] *)
 
 module OperationDefinition = struct
-  type t = {
-    name : string;
-    operation : Operation.t;
-    args : OperationArg.t list option;
-    variables : ArgumentDefiniton.t list option;
-    selection : SelectionField.t list;
-  }
+  type t =
+    { name : string
+    ; operation : Operation.t
+    ; args : OperationArg.t list option
+    ; variables : ArgumentDefiniton.t list option
+    ; selection : SelectionField.t list
+    }
   [@@deriving show { with_path = false }, sexp]
 end
 
 module FragmentDefinition = struct
-  type t = {
-    name : string;
-    type_condition : string;
-    selection : SelectionField.t list;
-  }
+  type t =
+    { name : string
+    ; type_condition : string
+    ; selection : SelectionField.t list
+    }
   [@@deriving show { with_path = false }, sexp]
 end
 
@@ -212,12 +246,12 @@ module DirectiveLocation = struct
 end
 
 module Directive = struct
-  type t = {
-    name : string;
-    args : ArgumentDefiniton.t list option;
-    locations : DirectiveLocation.t list;
-    description : string option;
-  }
+  type t =
+    { name : string
+    ; args : ArgumentDefiniton.t list option
+    ; locations : DirectiveLocation.t list
+    ; description : string option
+    }
   [@@deriving show { with_path = false }, sexp]
 end
 

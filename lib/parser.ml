@@ -7,20 +7,24 @@ open Ast
 let ( let* ) res f = Base.Result.bind res ~f
 let ( let+ ) res f = Option.bind res ~f
 
-type t = { lexer : Lexer.t; cur_token : Token.t; peek_token : Token.t }
+type t =
+  { lexer : Lexer.t
+  ; cur_token : Token.t
+  ; peek_token : Token.t
+  }
 [@@deriving show]
 
 let next_token parser =
   let lexer, peek = Lexer.next_token parser.lexer in
   { lexer; cur_token = parser.peek_token; peek_token = peek }
+;;
 
 let init lexer =
-  let parser =
-    { lexer; cur_token = Token.Illegal; peek_token = Token.Illegal }
-  in
+  let parser = { lexer; cur_token = Token.Illegal; peek_token = Token.Illegal } in
   let parser = next_token parser in
   let parser = next_token parser in
   parser
+;;
 
 let line parser = parser.lexer.line
 
@@ -28,114 +32,146 @@ let chomp_semicolon parser =
   match parser.peek_token with
   | Token.Semicolon -> next_token parser
   | _ -> parser
+;;
 
 let chomp parser tok =
   match tok with
   | tok when phys_equal tok parser.peek_token -> next_token parser
   | _ -> parser
+;;
 
 let chomp_comment parser =
   match parser.peek_token with
   | Token.Comment _ -> next_token parser
   | _ -> parser
+;;
 
 let expect_peek parser condition =
   match condition parser.peek_token with
-  | true -> (next_token parser, true)
-  | _ -> (parser, false)
+  | true -> next_token parser, true
+  | _ -> parser, false
+;;
 
 let expect_peek_left_brace parser =
-  expect_peek parser (function Token.LeftBrace -> true | _ -> false)
+  expect_peek parser (function
+      | Token.LeftBrace -> true
+      | _ -> false)
+;;
 
 let expect_peek_right_brace parser =
-  expect_peek parser (function Token.RightBrace -> true | _ -> false)
+  expect_peek parser (function
+      | Token.RightBrace -> true
+      | _ -> false)
+;;
 
 let expect_peek_right_bracket parser =
-  expect_peek parser (function Token.RightBracket -> true | _ -> false)
+  expect_peek parser (function
+      | Token.RightBracket -> true
+      | _ -> false)
+;;
 
 let expect_peek_colon parser =
-  expect_peek parser (function Token.Colon -> true | _ -> false)
+  expect_peek parser (function
+      | Token.Colon -> true
+      | _ -> false)
+;;
 
 let expect_peek_equal parser =
-  expect_peek parser (function Token.Equal -> true | _ -> false)
+  expect_peek parser (function
+      | Token.Equal -> true
+      | _ -> false)
+;;
 
 let expect_peek_at parser =
-  expect_peek parser (function Token.At -> true | _ -> false)
+  expect_peek parser (function
+      | Token.At -> true
+      | _ -> false)
+;;
 
 let expect_peek_on parser =
-  expect_peek parser (function Token.Name "on" -> true | _ -> false)
+  expect_peek parser (function
+      | Token.Name "on" -> true
+      | _ -> false)
+;;
 
 let peek_is parser token = phys_equal parser.peek_token token
 
 let peek_token_is_name parser =
-  match parser.peek_token with Token.Name _ -> true | _ -> false
+  match parser.peek_token with
+  | Token.Name _ -> true
+  | _ -> false
+;;
 
 let expect_current_is parser token =
   if Token.equal parser.cur_token token then true else false
+;;
 
 let current_token_is parser token = phys_equal token parser.cur_token
 
 let current_token_is_name parser =
-  match parser.cur_token with Token.Name _ -> true | _ -> false
+  match parser.cur_token with
+  | Token.Name _ -> true
+  | _ -> false
+;;
 
 let rec skip_while parser condition =
   if condition parser then skip_while (next_token parser) condition else parser
+;;
 
 let name_to_directive_location name =
   match name with
   | Token.Name "FIELD_DEFINITION" ->
-      DirectiveLocation.TypeSystemDirectiveLocation
-        TypeSystemDirectiveLocation.FIELD_DEFINITION
+    DirectiveLocation.TypeSystemDirectiveLocation
+      TypeSystemDirectiveLocation.FIELD_DEFINITION
   | Token.Name "SCHEMA" ->
-      DirectiveLocation.TypeSystemDirectiveLocation
-        TypeSystemDirectiveLocation.SCHEMA
+    DirectiveLocation.TypeSystemDirectiveLocation TypeSystemDirectiveLocation.SCHEMA
   | Token.Name "SCALAR" ->
-      DirectiveLocation.TypeSystemDirectiveLocation
-        TypeSystemDirectiveLocation.SCALAR
+    DirectiveLocation.TypeSystemDirectiveLocation TypeSystemDirectiveLocation.SCALAR
   | Token.Name "OBJECT" ->
-      DirectiveLocation.TypeSystemDirectiveLocation
-        TypeSystemDirectiveLocation.OBJECT
+    DirectiveLocation.TypeSystemDirectiveLocation TypeSystemDirectiveLocation.OBJECT
   | Token.Name "ARGUMENT_DEFINITION" ->
-      DirectiveLocation.TypeSystemDirectiveLocation
-        TypeSystemDirectiveLocation.ARGUMENT_DEFINITION
+    DirectiveLocation.TypeSystemDirectiveLocation
+      TypeSystemDirectiveLocation.ARGUMENT_DEFINITION
   | Token.Name "INTERFACE" ->
-      DirectiveLocation.TypeSystemDirectiveLocation
-        TypeSystemDirectiveLocation.INTERFACE
+    DirectiveLocation.TypeSystemDirectiveLocation TypeSystemDirectiveLocation.INTERFACE
   | Token.Name "ENUM" ->
-      DirectiveLocation.TypeSystemDirectiveLocation
-        TypeSystemDirectiveLocation.ENUM
+    DirectiveLocation.TypeSystemDirectiveLocation TypeSystemDirectiveLocation.ENUM
   | Token.Name "ENUM_VALUE" ->
-      DirectiveLocation.TypeSystemDirectiveLocation
-        TypeSystemDirectiveLocation.ENUM_VALUE
+    DirectiveLocation.TypeSystemDirectiveLocation TypeSystemDirectiveLocation.ENUM_VALUE
   | Token.Name "INPUT_OBJECT" ->
-      DirectiveLocation.TypeSystemDirectiveLocation
-        TypeSystemDirectiveLocation.INPUT_OBJECT
+    DirectiveLocation.TypeSystemDirectiveLocation TypeSystemDirectiveLocation.INPUT_OBJECT
   | Token.Name "INPUT_FIELD_DEFINITION" ->
-      DirectiveLocation.TypeSystemDirectiveLocation
-        TypeSystemDirectiveLocation.INPUT_FIELD_DEFINITION
-  | _ ->
-      failwith (Printf.sprintf "unexpected location name: %s" (Token.show name))
+    DirectiveLocation.TypeSystemDirectiveLocation
+      TypeSystemDirectiveLocation.INPUT_FIELD_DEFINITION
+  | _ -> failwith (Printf.sprintf "unexpected location name: %s" (Token.show name))
+;;
 
 let print_parser_state ?(msg = "parser: ") parser =
-  Printf.printf "%s: cur: %s, peek: %s\n" msg
+  Printf.printf
+    "%s: cur: %s, peek: %s\n"
+    msg
     (Token.show parser.cur_token)
     (Token.show parser.peek_token)
+;;
 
 let failwith_parser_error parser msg =
   failwith
-    (Printf.sprintf "Parser Error (line: %d): %s -- cur: %s, peek: %s"
-       (line parser) msg
+    (Printf.sprintf
+       "Parser Error (line: %d): %s -- cur: %s, peek: %s"
+       (line parser)
+       msg
        (Token.show parser.cur_token)
        (Token.show parser.peek_token))
+;;
 
 let rec parse parser =
   let rec parse' parser definitions =
     match parser.cur_token with
-    | Token.Eof -> (parser, List.rev definitions)
-    | _ -> (
-        match parse_definition parser with
-        | Ok (parser, s) -> parse' (next_token parser) (s :: definitions)
-        | Error err -> failwith_parser_error parser err)
+    | Token.Eof -> parser, List.rev definitions
+    | _ ->
+      (match parse_definition parser with
+      | Ok (parser, s) -> parse' (next_token parser) (s :: definitions)
+      | Error err -> failwith_parser_error parser err)
   in
   let _, definitions = parse' parser [] in
   Ok (Ast.Document definitions)
@@ -143,8 +179,8 @@ let rec parse parser =
 and parse_definition parser =
   let parser, description =
     match parse_description parser with
-    | parser, Some d -> (next_token parser, Some d)
-    | parser, None -> (parser, None)
+    | parser, Some d -> next_token parser, Some d
+    | parser, None -> parser, None
   in
   match parser.cur_token with
   | Token.Type -> parse_type (next_token parser) description
@@ -154,99 +190,90 @@ and parse_definition parser =
   | Token.Enum -> parse_enum (next_token parser) description
   | Token.Input -> parse_input_type (next_token parser) description
   | Token.Comment comment ->
-      Ok (parser, Definition.TypeDefinition (TypeDefinition.Comment comment))
+    Ok (parser, Definition.TypeDefinition (TypeDefinition.Comment comment))
   | Token.Query | Token.Mutation
   | Token.Name "query"
   | Token.Name "mutation"
-  | Token.LeftBrace ->
-      parse_executable_document parser
+  | Token.LeftBrace -> parse_executable_document parser
   | Token.Name "fragment" -> parse_fragment (next_token parser)
   | Token.Name "interface" -> parse_interface (next_token parser) description
   | Token.Name "directive" -> parse_directive parser description
   | _ ->
-      failwith
-        (Printf.sprintf "unexpected definition: %s"
-           (Token.show parser.cur_token))
+    failwith (Printf.sprintf "unexpected definition: %s" (Token.show parser.cur_token))
 
 and parse_directive parser description =
   let parser, ok = expect_peek_at parser in
   match ok with
-  | true -> (
-      let parser = next_token parser in
-      let* parser, name = parse_name parser in
-      let* parser, args =
+  | true ->
+    let parser = next_token parser in
+    let* parser, name = parse_name parser in
+    let* parser, args =
+      match parser.peek_token with
+      | Token.LeftParen ->
+        let parser = next_token parser in
+        parse_field_args parser
+      | _ -> Ok (parser, None)
+    in
+    let parser, ok = expect_peek_on parser in
+    (match ok with
+    | true ->
+      let parser =
         match parser.peek_token with
-        | Token.LeftParen ->
-            let parser = next_token parser in
-            parse_field_args parser
-        | _ -> Ok (parser, None)
+        | Token.Pipe -> next_token parser
+        | _ -> parser
       in
-      let parser, ok = expect_peek_on parser in
-      match ok with
-      | true ->
-          let parser =
-            match parser.peek_token with
-            | Token.Pipe -> next_token parser
-            | _ -> parser
-          in
-          let rec parse_locations parser locations =
-            match parser.peek_token with
-            | Token.Pipe ->
-                let parser = next_token parser in
-                let loc = name_to_directive_location parser.peek_token in
-                parse_locations (next_token parser) (loc :: locations)
-            | _ ->
-                Ok
-                  ( parser,
-                    Definition.Directive
-                      Directive.{ name; args; locations; description } )
-          in
-          parse_locations (next_token parser)
-            [ name_to_directive_location parser.peek_token ]
-      | false -> failwith_parser_error parser "parse_directive: expected 'on'")
+      let rec parse_locations parser locations =
+        match parser.peek_token with
+        | Token.Pipe ->
+          let parser = next_token parser in
+          let loc = name_to_directive_location parser.peek_token in
+          parse_locations (next_token parser) (loc :: locations)
+        | _ ->
+          Ok
+            (parser, Definition.Directive Directive.{ name; args; locations; description })
+      in
+      parse_locations (next_token parser) [ name_to_directive_location parser.peek_token ]
+    | false -> failwith_parser_error parser "parse_directive: expected 'on'")
   | false -> failwith_parser_error parser "parse_directive: expected '@'"
 
 and parse_interface parser description =
   let* parser, name = parse_name parser in
   let parser, ok = expect_peek_left_brace parser in
-  match (parser, ok) with
+  match parser, ok with
   | parser, true ->
-      let* parser, fields = parse_type_definition parser in
-      Ok
-        ( parser,
-          Definition.TypeDefinition
-            (TypeDefinition.Interface { name; fields; description }) )
+    let* parser, fields = parse_type_definition parser in
+    Ok
+      ( parser
+      , Definition.TypeDefinition (TypeDefinition.Interface { name; fields; description })
+      )
   | _, false -> Error "parse_interface: expected left brace"
 
 and parse_fragment parser =
   let* parser, name = parse_name parser in
   match parser.peek_token with
   | Token.Name "on" ->
-      let parser = next_token parser in
-      let parser = next_token parser in
-      let* parser, type_condition = parse_name parser in
-      let parser, ok = expect_peek_left_brace parser in
-      if ok then
-        let* parser, selection = parse_selection_set parser in
-
-        let parser, ok = expect_peek_right_brace parser in
-        if ok then
-          Ok
-            ( parser,
-              Definition.ExecutableDefinition
-                (ExecutableDefinition.FragmentDefinition
-                   { name; type_condition; selection }) )
-        else
-          failwith_parser_error parser
-            "expected right brace after fragment seletion"
-      else
-        failwith_parser_error parser "expected left brace for fragment seletion"
+    let parser = next_token parser in
+    let parser = next_token parser in
+    let* parser, type_condition = parse_name parser in
+    let parser, ok = expect_peek_left_brace parser in
+    if ok
+    then
+      let* parser, selection = parse_selection_set parser in
+      let parser, ok = expect_peek_right_brace parser in
+      if ok
+      then
+        Ok
+          ( parser
+          , Definition.ExecutableDefinition
+              (ExecutableDefinition.FragmentDefinition { name; type_condition; selection })
+          )
+      else failwith_parser_error parser "expected right brace after fragment seletion"
+    else failwith_parser_error parser "expected left brace for fragment seletion"
   | _ -> failwith_parser_error parser "expected 'on' token"
 
 and parse_executable_document parser =
   match parser.cur_token with
-  | Token.LeftBrace ->
-      failwith_parser_error parser "unnamed query is not supported"
+  | Token.LeftBrace -> failwith_parser_error parser "unnamed query is not supported"
   | Token.Name "query" -> parse_query parser
   | Token.Name "mutation" -> parse_mutation parser
   | _ -> failwith_parser_error parser "expected query or mutation"
@@ -257,71 +284,64 @@ and parse_query parser =
   let* parser, vars =
     match parser.peek_token with
     | Token.LeftParen ->
-        let* parser, vars = parse_variables parser in
-        let parser = next_token parser in
-        Ok (parser, vars)
+      let* parser, vars = parse_variables parser in
+      let parser = next_token parser in
+      Ok (parser, vars)
     | _ -> Ok (parser, None)
   in
   let parser, ok = expect_peek_left_brace parser in
-  match (parser, ok) with
-  | parser, true -> (
-      let parser = next_token parser in
-      let* parser, operation = parse_name parser in
-      let* parser, args, operation =
-        match parser.peek_token with
-        | Token.LeftParen ->
-            (* let parser = next_token parser in *)
-            let* parser, args = parse_args parser in
-            Ok (parser, args, operation)
-        | _ -> Ok (parser, None, _name)
-      in
-      let parser, ok = expect_peek_left_brace parser in
-      let* parser, selection =
-        match (parser, ok) with
-        | parser, true -> parse_selection_set parser
-        | _ ->
-            failwith_parser_error parser
-              "parse_query: expected left brace for section"
-      in
+  match parser, ok with
+  | parser, true ->
+    let parser = next_token parser in
+    let* parser, operation = parse_name parser in
+    let* parser, args, operation =
+      match parser.peek_token with
+      | Token.LeftParen ->
+        let* parser, args = parse_args parser in
+        Ok (parser, args, operation)
+      | _ -> Ok (parser, None, _name)
+    in
+    let parser, ok = expect_peek_left_brace parser in
+    let* parser, selection =
+      match parser, ok with
+      | parser, true -> parse_selection_set parser
+      | _ -> failwith_parser_error parser "parse_query: expected left brace for section"
+    in
+    let parser, ok = expect_peek_right_brace parser in
+    (match ok with
+    | false ->
+      failwith_parser_error parser "expected closing right brace for selection set"
+    | true ->
       let parser, ok = expect_peek_right_brace parser in
-      match ok with
-      | false ->
-          failwith_parser_error parser
-            "expected closing right brace for selection set"
-      | true -> (
-          let parser, ok = expect_peek_right_brace parser in
-          match ok with
-          | false ->
-              failwith_parser_error parser
-                "expected closing right brace for query"
-          | true ->
-              Ok
-                ( parser,
-                  Definition.ExecutableDefinition
-                    (ExecutableDefinition.OperationDefinition
-                       {
-                         name = operation;
-                         operation = Operation.Query;
-                         args;
-                         variables = vars;
-                         selection;
-                       }) )))
+      (match ok with
+      | false -> failwith_parser_error parser "expected closing right brace for query"
+      | true ->
+        Ok
+          ( parser
+          , Definition.ExecutableDefinition
+              (ExecutableDefinition.OperationDefinition
+                 { name = operation
+                 ; operation = Operation.Query
+                 ; args
+                 ; variables = vars
+                 ; selection
+                 }) )))
   | _ -> failwith_parser_error parser "parse_query: expected left brace"
 
 and parse_selection_set parser =
   let rec parse_selection_set' parser set =
     match parser.peek_token with
     | Token.Name _ ->
-        let parser = next_token parser in
-        let* parser, name = parse_name parser in
-        let ss = SelectionField.Field name in
-        parse_selection_set' parser (ss :: set)
+      let parser = next_token parser in
+      let* parser, name = parse_name parser in
+      let ss = SelectionField.Field name in
+      parse_selection_set' parser (ss :: set)
     | Token.Ellipsis ->
-        let parser = next_token parser in
-        let parser = next_token parser in
-        let* parser, name = parse_name parser in
-        let ss = SelectionField.SpreadField name in
-        parse_selection_set' parser (ss :: set)
+      let parser = next_token parser in
+      let parser = next_token parser in
+      let* parser, name = parse_name parser in
+      let ss = SelectionField.SpreadField name in
+      parse_selection_set' parser (ss :: set)
     | _ -> Ok (parser, set)
   in
   parse_selection_set' parser []
@@ -332,22 +352,19 @@ and parse_args parser =
   let rec parse_args' parser args =
     let parser = chomp parser Token.Comma in
     match parser.peek_token with
-    | Token.Colon -> (
-        let* parser, name = parse_name parser in
-        let parser, ok = expect_peek_colon parser in
-        match (parser, ok) with
-        | parser, true ->
-            let parser = next_token parser in
-
-            let* parser, var_name = parse_name parser in
-            let arg = OperationArg.{ name; value = var_name } in
-            parse_args' parser (arg :: args)
-        | _ ->
-            failwith_parser_error parser
-              "parse_args: expected colon after var name")
-    | Token.RightParen ->
+    | Token.Colon ->
+      let* parser, name = parse_name parser in
+      let parser, ok = expect_peek_colon parser in
+      (match parser, ok with
+      | parser, true ->
         let parser = next_token parser in
-        Ok (parser, Some args)
+        let* parser, var_name = parse_name parser in
+        let arg = OperationArg.{ name; value = var_name } in
+        parse_args' parser (arg :: args)
+      | _ -> failwith_parser_error parser "parse_args: expected colon after var name")
+    | Token.RightParen ->
+      let parser = next_token parser in
+      Ok (parser, Some args)
     | _ -> failwith_parser_error parser "parse_args: peek should be a colon"
   in
   parse_args' parser []
@@ -358,24 +375,18 @@ and parse_variables parser =
   let rec parse_variables' parser vars =
     let parser = chomp parser Token.Comma in
     match parser.peek_token with
-    | Token.Colon -> (
-        let* parser, name = parse_name parser in
-        let parser, ok = expect_peek_colon parser in
-        match (parser, ok) with
-        | parser, true ->
-            let parser = next_token parser in
-
-            let* parser, gql_type = parse_graphql_type parser in
-            let var =
-              ArgumentDefiniton.{ name; ty = gql_type; description = None }
-            in
-            parse_variables' parser (var :: vars)
-        | _ ->
-            failwith_parser_error parser
-              "parse_variables: expected colon after var name")
+    | Token.Colon ->
+      let* parser, name = parse_name parser in
+      let parser, ok = expect_peek_colon parser in
+      (match parser, ok with
+      | parser, true ->
+        let parser = next_token parser in
+        let* parser, gql_type = parse_graphql_type parser in
+        let var = ArgumentDefiniton.{ name; ty = gql_type; description = None } in
+        parse_variables' parser (var :: vars)
+      | _ -> failwith_parser_error parser "parse_variables: expected colon after var name")
     | Token.RightParen -> Ok (parser, Some vars)
-    | _ ->
-        failwith_parser_error parser "parse_varialbes: peek should be a colon"
+    | _ -> failwith_parser_error parser "parse_varialbes: peek should be a colon"
   in
   parse_variables' parser []
 
@@ -386,75 +397,72 @@ and parse_mutation parser =
 and parse_input_type parser description =
   let* parser, name = parse_name parser in
   let parser, ok = expect_peek_left_brace parser in
-  match (parser, ok) with
+  match parser, ok with
   | parser, true ->
-      let* parser, fields = parse_type_definition parser in
-      Ok
-        ( parser,
-          Definition.TypeDefinition
-            (TypeDefinition.Input { name; fields; description }) )
+    let* parser, fields = parse_type_definition parser in
+    Ok
+      ( parser
+      , Definition.TypeDefinition (TypeDefinition.Input { name; fields; description }) )
   | _, false -> Error "expected left brace"
 
 and parse_enum parser description =
   let* parser, name = parse_name parser in
   let parser, ok = expect_peek_left_brace parser in
-  if not ok then failwith "parse_enum: expected left brace"
-  else
+  if not ok
+  then failwith "parse_enum: expected left brace"
+  else (
     let parser = next_token parser in
     let rec parse_enum_value parser vals =
       let parser, enum_desc =
         match parse_description parser with
         | parser, Some d ->
-            let parser = next_token parser in
-            (parser, Some d)
-        | _ -> (parser, None)
+          let parser = next_token parser in
+          parser, Some d
+        | _ -> parser, None
       in
       match parser.cur_token with
       | Token.RightBrace -> Ok (parser, List.rev vals)
       | Token.Comment _ -> parse_enum_value (next_token parser) vals
       | _ ->
-          let* parser, name = parse_name parser in
-          let parser = next_token parser in
-          parse_enum_value parser
-            (BaseValue.{ name; description = enum_desc } :: vals)
+        let* parser, name = parse_name parser in
+        let parser = next_token parser in
+        parse_enum_value parser (BaseValue.{ name; description = enum_desc } :: vals)
     in
     let* parser, vals = parse_enum_value parser [] in
     Ok
-      ( parser,
-        Definition.TypeDefinition
-          (TypeDefinition.Enum EnumType.{ name; values = vals; description }) )
+      ( parser
+      , Definition.TypeDefinition
+          (TypeDefinition.Enum EnumType.{ name; values = vals; description }) ))
 
 and parse_union parser description =
   let* parser, union_name = parse_name parser in
   let parser, ok = expect_peek_equal parser in
-  if not ok then failwith "parse_union: expected ="
-  else
+  if not ok
+  then failwith "parse_union: expected ="
+  else (
     let parser = next_token parser in
     let parser, first_union_desc =
       match parse_description parser with
       | parser, Some d ->
-          let parser = next_token parser in
-          (parser, Some d)
-      | _ -> (parser, None)
+        let parser = next_token parser in
+        parser, Some d
+      | _ -> parser, None
     in
     let* parser, name = parse_name parser in
-
     let rec parse_member parser members =
       let parser, union_desc =
         match parse_description parser with
         | parser, Some d ->
-            let parser = next_token parser in
-            (parser, Some d)
-        | _ -> (parser, None)
+          let parser = next_token parser in
+          parser, Some d
+        | _ -> parser, None
       in
-
       match parser.peek_token with
       | Token.Pipe ->
-          let parser = next_token parser in
-          let parser = next_token parser in
-          let* parser, name = parse_name parser in
-          parse_member parser
-            (BaseValue.{ name; description = union_desc } :: members)
+        let parser = next_token parser in
+        let parser = next_token parser in
+        let* parser, name = parse_name parser in
+        parse_member parser (BaseValue.{ name; description = union_desc } :: members)
       | Token.Comment _ -> parse_member (next_token parser) members
       | _ -> Ok (parser, List.rev members)
     in
@@ -462,20 +470,18 @@ and parse_union parser description =
       parse_member parser [ BaseValue.{ name; description = first_union_desc } ]
     in
     Ok
-      ( parser,
-        Definition.TypeDefinition
-          (TypeDefinition.Union { name = union_name; members; description }) )
+      ( parser
+      , Definition.TypeDefinition
+          (TypeDefinition.Union { name = union_name; members; description }) ))
 
 and parse_description parser =
   match parser.cur_token with
-  | Token.StringLiteral s -> (parser, Some s)
-  | _ -> (parser, None)
+  | Token.StringLiteral s -> parser, Some s
+  | _ -> parser, None
 
 and parse_scalar parser description =
   let* parser, name = parse_name parser in
-  Ok
-    ( parser,
-      Definition.TypeDefinition (TypeDefinition.Scalar { name; description }) )
+  Ok (parser, Definition.TypeDefinition (TypeDefinition.Scalar { name; description }))
 
 and parse_schema parser description =
   match parser.cur_token with
@@ -486,42 +492,35 @@ and parse_schema_def parser description =
   let rec parse_schema_def' parser fields =
     match parser.peek_token with
     | Token.RightBrace | Token.Eof -> Ok (parser, List.rev fields)
-    | _ -> (
-        let* parser, op = parse_schema_op_type parser in
-        match parser.peek_token with
-        | Token.RightBrace -> Ok (parser, List.rev_append [ op ] fields)
-        | Token.Name _ -> parse_schema_def' (next_token parser) (op :: fields)
-        | Token.StringLiteral _ ->
-            parse_schema_def' (next_token parser) (op :: fields)
-        | _ -> failwith_parser_error parser "parse_schema_def: unexpected token"
-        )
+    | _ ->
+      let* parser, op = parse_schema_op_type parser in
+      (match parser.peek_token with
+      | Token.RightBrace -> Ok (parser, List.rev_append [ op ] fields)
+      | Token.Name _ -> parse_schema_def' (next_token parser) (op :: fields)
+      | Token.StringLiteral _ -> parse_schema_def' (next_token parser) (op :: fields)
+      | _ -> failwith_parser_error parser "parse_schema_def: unexpected token")
   in
   let* parser, fields = parse_schema_def' parser [] in
   let query = List.find fields ~f:(fun (name, _) -> name_is name "query") in
-  let mutation =
-    List.find fields ~f:(fun (name, _) -> name_is name "mutation")
-  in
-  let subscription =
-    List.find fields ~f:(fun (name, _) -> name_is name "subscription")
-  in
+  let mutation = List.find fields ~f:(fun (name, _) -> name_is name "mutation") in
+  let subscription = List.find fields ~f:(fun (name, _) -> name_is name "subscription") in
   match parser.peek_token with
   | Token.RightBrace ->
-      Ok
-        ( next_token parser,
-          Definition.Schema
-            {
-              query = make_schema_op query;
-              mutation = make_schema_op mutation;
-              subscription = make_schema_op subscription;
-              description;
-            } )
+    Ok
+      ( next_token parser
+      , Definition.Schema
+          { query = make_schema_op query
+          ; mutation = make_schema_op mutation
+          ; subscription = make_schema_op subscription
+          ; description
+          } )
   | _ -> Error "parse_schema_def: expected closing right brace"
 
 and make_schema_op op =
   match op with
   | Some (_, o) ->
-      (* let () = Printf.printf "%s -> %s\n" value ty in *)
-      Some BaseValue.{ name = o.name; description = o.description }
+    (* let () = Printf.printf "%s -> %s\n" value ty in *)
+    Some BaseValue.{ name = o.name; description = o.description }
   | None -> None
 
 and name_is a b = String.compare a b = 0
@@ -530,54 +529,53 @@ and parse_schema_op_type parser =
   let parser, description =
     match parse_description parser with
     | parser, Some d ->
-        let parser = next_token parser in
-        (parser, Some d)
-    | _ -> (parser, None)
+      let parser = next_token parser in
+      parser, Some d
+    | _ -> parser, None
   in
   let* parser, op_name = parse_name parser in
   match parser.peek_token with
   | Token.Colon ->
-      let parser = next_token parser in
-      let parser = next_token parser in
-      let* parser, name = parse_name parser in
-      Ok (parser, (op_name, BaseValue.{ name; description }))
+    let parser = next_token parser in
+    let parser = next_token parser in
+    let* parser, name = parse_name parser in
+    Ok (parser, (op_name, BaseValue.{ name; description }))
   | _ ->
-      Error
-        (Printf.sprintf "parse_schema_op_type: expected colon: %s"
-           (Token.show parser.peek_token))
+    Error
+      (Printf.sprintf
+         "parse_schema_op_type: expected colon: %s"
+         (Token.show parser.peek_token))
 
 and parse_type parser description =
   let* parser, name = parse_name parser in
   let* parser, implements = parse_implements parser in
   let parser, ok = expect_peek_left_brace parser in
-  match (parser, ok) with
+  match parser, ok with
   | parser, true ->
-      let* parser, fields = parse_type_definition parser in
-      Ok
-        ( parser,
-          Definition.TypeDefinition
-            (TypeDefinition.Object { name; implements; fields; description }) )
+    let* parser, fields = parse_type_definition parser in
+    Ok
+      ( parser
+      , Definition.TypeDefinition
+          (TypeDefinition.Object { name; implements; fields; description }) )
   | _, false -> Error "expected left brace"
 
 and parse_implements parser =
   match parser.peek_token with
   | Token.Name "implements" ->
-      let parser = next_token parser in
-      let parser = next_token parser in
-      let rec parse_implements' parser names =
-        let* parser, name = parse_name parser in
-        match parser.peek_token with
-        | Token.LeftBrace ->
-            Ok (parser, List.rev (List.rev_append [ name ] names))
-        | Token.Ampersand ->
-            let parser = next_token parser in
-            let parser = next_token parser in
-            parse_implements' parser (name :: names)
-        | _ ->
-            failwith_parser_error parser
-              "parse_implements': expected &, name or left brace"
-      in
-      parse_implements' parser []
+    let parser = next_token parser in
+    let parser = next_token parser in
+    let rec parse_implements' parser names =
+      let* parser, name = parse_name parser in
+      match parser.peek_token with
+      | Token.LeftBrace -> Ok (parser, List.rev (List.rev_append [ name ] names))
+      | Token.Ampersand ->
+        let parser = next_token parser in
+        let parser = next_token parser in
+        parse_implements' parser (name :: names)
+      | _ ->
+        failwith_parser_error parser "parse_implements': expected &, name or left brace"
+    in
+    parse_implements' parser []
   | _ -> Ok (parser, [])
 
 and parse_type_definition parser =
@@ -585,48 +583,47 @@ and parse_type_definition parser =
     let parser, description =
       match parser.peek_token with
       | Token.StringLiteral _ ->
-          let parser = next_token parser in
-          parse_description parser
-      | _ -> (parser, None)
+        let parser = next_token parser in
+        parse_description parser
+      | _ -> parser, None
     in
     match parser.peek_token with
     | Token.RightBrace | Token.Eof -> Ok (parser, List.rev fields)
     | Token.Comment _ -> parse_type_def' (next_token parser) fields
-    | Token.Name _ | Token.Type | Token.Input -> (
-        let parser = next_token parser in
-        let* parser, name = parse_name parser in
-        let* parser, args =
-          match parser.peek_token with
-          | Token.LeftParen ->
-              let parser = next_token parser in
-              parse_field_args parser
-          | _ -> Ok (parser, None)
-        in
+    | Token.Name _ | Token.Type | Token.Input ->
+      let parser = next_token parser in
+      let* parser, name = parse_name parser in
+      let* parser, args =
         match parser.peek_token with
-        | Token.Colon ->
-            let parser = next_token parser in
-            let parser = next_token parser in
-            let* parser, ty = parse_graphql_type parser in
-            let field = Field.{ name; args; ty; description } in
-            parse_type_def' parser (field :: fields)
-        | Token.Name _ ->
-            let parser = next_token parser in
-            let* parser, ty = parse_graphql_type parser in
-
-            let field = Field.{ name; args; ty; description } in
-            parse_type_def' parser (field :: fields)
-        | _ -> failwith "parse_type_definition: expected a name or a colon")
+        | Token.LeftParen ->
+          let parser = next_token parser in
+          parse_field_args parser
+        | _ -> Ok (parser, None)
+      in
+      (match parser.peek_token with
+      | Token.Colon ->
+        let parser = next_token parser in
+        let parser = next_token parser in
+        let* parser, ty = parse_graphql_type parser in
+        let field = Field.{ name; args; ty; description } in
+        parse_type_def' parser (field :: fields)
+      | Token.Name _ ->
+        let parser = next_token parser in
+        let* parser, ty = parse_graphql_type parser in
+        let field = Field.{ name; args; ty; description } in
+        parse_type_def' parser (field :: fields)
+      | _ -> failwith "parse_type_definition: expected a name or a colon")
     | _ ->
-        failwith
-          (Printf.sprintf
-             "parse_type_definition: expected right brace, comment, or name: \
-              cur: %s, peek: %s"
-             (Token.show parser.cur_token)
-             (Token.show parser.peek_token))
+      failwith
+        (Printf.sprintf
+           "parse_type_definition: expected right brace, comment, or name: cur: %s, \
+            peek: %s"
+           (Token.show parser.cur_token)
+           (Token.show parser.peek_token))
   in
   let* parser, td = parse_type_def' parser [] in
   let parser, ok = expect_peek_right_brace parser in
-  match (parser, ok) with
+  match parser, ok with
   | parser, true -> Ok (parser, td)
   | _, false -> Error "expected right brace"
 
@@ -637,110 +634,109 @@ and parse_field_args parser =
     let parser, arg_desc =
       match parser.peek_token with
       | Token.StringLiteral _ -> parse_description (next_token parser)
-      | _ -> (parser, None)
+      | _ -> parser, None
     in
-
     match parser.peek_token with
     | Token.RightParen ->
-        let parser =
-          if not (current_token_is parser Token.RightParen) then
-            next_token parser
-          else parser
-        in
-        Ok (parser, Some (List.rev args))
-    | Token.Name _ | Token.Type | Token.Input -> (
-        let parser = next_token parser in
-        match parser.peek_token with
-        | Token.Colon -> (
-            let* parser, name = parse_name parser in
-            match parser.peek_token with
-            | Token.Colon ->
-                let parser = next_token parser in
-                let parser = next_token parser in
-                let* parser, gql_type = parse_graphql_type parser in
-                let parser, arg =
-                  ( parser,
-                    ArgumentDefiniton.
-                      { name; ty = gql_type; description = arg_desc } )
-                in
-                parse_field_args' parser (arg :: args)
-            | _ -> failwith "parse_field_args")
-        | _ ->
-            failwith
-              (Printf.sprintf "expected args: cur: %s, peek: %s"
-                 (Token.show parser.cur_token)
-                 (Token.show parser.peek_token)))
-    | _ ->
+      let parser =
+        if not (current_token_is parser Token.RightParen)
+        then next_token parser
+        else parser
+      in
+      Ok (parser, Some (List.rev args))
+    | Token.Name _ | Token.Type | Token.Input ->
+      let parser = next_token parser in
+      (match parser.peek_token with
+      | Token.Colon ->
+        let* parser, name = parse_name parser in
+        (match parser.peek_token with
+        | Token.Colon ->
+          let parser = next_token parser in
+          let parser = next_token parser in
+          let* parser, gql_type = parse_graphql_type parser in
+          let parser, arg =
+            parser, ArgumentDefiniton.{ name; ty = gql_type; description = arg_desc }
+          in
+          parse_field_args' parser (arg :: args)
+        | _ -> failwith "parse_field_args")
+      | _ ->
         failwith
-          (Printf.sprintf "parse_field_args: expected name - cur: %s, peek: %s"
+          (Printf.sprintf
+             "expected args: cur: %s, peek: %s"
              (Token.show parser.cur_token)
-             (Token.show parser.peek_token))
+             (Token.show parser.peek_token)))
+    | _ ->
+      failwith
+        (Printf.sprintf
+           "parse_field_args: expected name - cur: %s, peek: %s"
+           (Token.show parser.cur_token)
+           (Token.show parser.peek_token))
   in
   parse_field_args' parser []
 
 and parse_graphql_type parser =
   match parser.cur_token with
-  | Token.LeftBracket -> (
-      let parser = next_token parser in
-      let* parser, gql_type = parse_graphql_type parser in
-      let parser, ok = expect_peek_right_bracket parser in
-      match (parser, ok) with
-      | parser, true -> (
-          match parser.peek_token with
-          | Token.Exclamation ->
-              let parser = next_token parser in
-              Ok
-                (parser, GraphqlType.NonNullType (GraphqlType.ListType gql_type))
-          | _ -> Ok (parser, GraphqlType.ListType gql_type))
-      | _ ->
-          Error
-            "parse_graphql_type: expected closing right bracket for list type")
-  | Token.Name _ -> (
-      let* parser, name = parse_name parser in
-      match parser.peek_token with
+  | Token.LeftBracket ->
+    let parser = next_token parser in
+    let* parser, gql_type = parse_graphql_type parser in
+    let parser, ok = expect_peek_right_bracket parser in
+    (match parser, ok with
+    | parser, true ->
+      (match parser.peek_token with
       | Token.Exclamation ->
-          let parser = next_token parser in
-
-          Ok (parser, GraphqlType.NonNullType (GraphqlType.NamedType name))
-      | _ -> Ok (parser, GraphqlType.NamedType name))
+        let parser = next_token parser in
+        Ok (parser, GraphqlType.NonNullType (GraphqlType.ListType gql_type))
+      | _ -> Ok (parser, GraphqlType.ListType gql_type))
+    | _ -> Error "parse_graphql_type: expected closing right bracket for list type")
+  | Token.Name _ ->
+    let* parser, name = parse_name parser in
+    (match parser.peek_token with
+    | Token.Exclamation ->
+      let parser = next_token parser in
+      Ok (parser, GraphqlType.NonNullType (GraphqlType.NamedType name))
+    | _ -> Ok (parser, GraphqlType.NamedType name))
   | _ -> Error "parse_graphql_type: expected a name or left bracket"
 
 and parse_name parser =
   match parser.cur_token with
   | Token.Name n -> Ok (parser, n)
   | Token.Type ->
-      Ok (parser, Token.to_name Token.Type)
-      (* HACK: if type is seen where a name is expected than set name to "type" *)
+    Ok (parser, Token.to_name Token.Type)
+    (* HACK: if type is seen where a name is expected than set name to "type" *)
   | Token.Input ->
-      Ok (parser, Token.to_name Token.Input)
-      (* HACK: if type is seen where a name is expected than set name to "input" *)
+    Ok (parser, Token.to_name Token.Input)
+    (* HACK: if type is seen where a name is expected than set name to "input" *)
   | _ ->
-      Error
-        (Printf.sprintf "parse_name: expected name: cur: %s, peek: %s"
-           (Token.show parser.cur_token)
-           (Token.show parser.peek_token))
+    Error
+      (Printf.sprintf
+         "parse_name: expected name: cur: %s, peek: %s"
+         (Token.show parser.cur_token)
+         (Token.show parser.peek_token))
+;;
 
 let parse_document input =
   let lexer = Lexer.init input in
   let parser = init lexer in
   let document = parse parser in
   document
+;;
 
 let show_type_definition = TypeDefinition.show
 
 let string_of_definition = function
   | Definition.TypeDefinition def -> Fmt.str "  %s@." (show_type_definition def)
   | Definition.Schema s -> Fmt.str "  %s@." (Schema.show s)
-  | Definition.ExecutableDefinition e ->
-      Fmt.str "  %s@." (ExecutableDefinition.show e)
+  | Definition.ExecutableDefinition e -> Fmt.str "  %s@." (ExecutableDefinition.show e)
   | Definition.Directive d -> Fmt.str "  %s@." (Directive.show d)
+;;
 
 let print_node = function
   | Ast.Document document ->
-      Fmt.pr "Document: [@.";
-      List.iter document ~f:(fun d -> Fmt.pr "  %s@." (string_of_definition d));
-      Fmt.pr "]@."
+    Fmt.pr "Document: [@.";
+    List.iter document ~f:(fun d -> Fmt.pr "  %s@." (string_of_definition d));
+    Fmt.pr "]@."
   | _ -> failwith "yaya"
+;;
 
 module Test = struct
   let expect_document input =
@@ -750,6 +746,8 @@ module Test = struct
     match program with
     | Ok program -> print_node program
     | Error msg -> Fmt.failwith "error...%s" msg
+  ;;
+
   (* | Error msg -> Fmt.failwith "%a@." pp_parse_error msg *)
 
   let%expect_test "testSimpleDocument" =
@@ -803,6 +801,7 @@ module Test = struct
          ]
 
                  |}]
+  ;;
 
   let%expect_test "testDocumentSchema" =
     let input =
@@ -831,6 +830,7 @@ module Test = struct
          ]
 
                  |}]
+  ;;
 
   let%expect_test "testFieldWithArgs" =
     let input =
@@ -893,6 +893,7 @@ module Test = struct
            description = None })
 
       ] |}]
+  ;;
 
   let%expect_test "testUnion" =
     let input =
@@ -916,6 +917,7 @@ module Test = struct
               description = (Some "union description") })
 
          ] |}]
+  ;;
 
   let%expect_test "testEnum" =
     let input =
@@ -943,6 +945,7 @@ module Test = struct
                 description = (Some "Enum description") })
 
            ] |}]
+  ;;
 
   let%expect_test "testComments" =
     let input =
@@ -999,6 +1002,7 @@ module Test = struct
                 description = None })
 
            ] |}]
+  ;;
 
   let%expect_test "testInputType" =
     let input =
@@ -1031,6 +1035,7 @@ module Test = struct
                 description = (Some "Input description") })
 
            ] |}]
+  ;;
 
   let%expect_test "testArgsWithComment" =
     let input =
@@ -1068,6 +1073,7 @@ module Test = struct
                 description = None })
 
            ] |}]
+  ;;
 
   let%expect_test "testTypeUsedAsArgName" =
     let input =
@@ -1099,6 +1105,7 @@ module Test = struct
                 description = None })
 
            ] |}]
+  ;;
 
   let%expect_test "testSimpleQueryExecDoc" =
     let input = {|
@@ -1120,6 +1127,7 @@ query foo{
       ]
 
 |}]
+  ;;
 
   let%expect_test "testSimpleQueryExecDocWithArgs" =
     let input =
@@ -1147,6 +1155,7 @@ query foo($var1: String){
       ]
 
 |}]
+  ;;
 
   let%expect_test "testQueryWithSpread" =
     let input =
@@ -1174,18 +1183,17 @@ query foo($var1: String){
       ]
 
 |}]
+  ;;
 
   let%expect_test "testFragment" =
-    let input =
-      {|
+    let input = {|
 fragment Actions on Actions {
   view
   edit
   add
   delete
 }
-|}
-    in
+|} in
     expect_document input;
     [%expect
       {|
@@ -1196,6 +1204,7 @@ fragment Actions on Actions {
            [(Field "delete"); (Field "add"); (Field "edit"); (Field "view")] })
 
       ] |}]
+  ;;
 
   let%expect_test "testInterface" =
     let input =
@@ -1230,16 +1239,15 @@ fragment Actions on Actions {
       ]
 
        |}]
+  ;;
 
   let%expect_test "testInterfaceImplements" =
-    let input =
-      {|
+    let input = {|
 type Person implements NamedEntity {
   name: String
   age: Int
 }
-|}
-    in
+|} in
     expect_document input;
     [%expect
       {|
@@ -1256,6 +1264,7 @@ type Person implements NamedEntity {
 
       ]
 |}]
+  ;;
 
   let%expect_test "testInterfaceMultipleImplements" =
     let input =
@@ -1282,15 +1291,14 @@ type Person implements NamedEntity & ValuedEntity{
 
       ]
 |}]
+  ;;
 
   let%expect_test "testDirectives" =
-    let input =
-      {|
+    let input = {|
     "directive desc"
 directive @example on FIELD_DEFINITION
 
-|}
-    in
+|} in
     expect_document input;
     [%expect
       {|
@@ -1301,6 +1309,7 @@ directive @example on FIELD_DEFINITION
 
       ]
   |}]
+  ;;
 
   let%expect_test "testDirectivesMultipleFields" =
     let input =
@@ -1337,6 +1346,7 @@ bar: String
       ]
 
 |}]
+  ;;
 
   let%expect_test "testDirectivesMultipleFields" =
     let input =
@@ -1361,4 +1371,5 @@ bar: String
 
       ]
 |}]
+  ;;
 end

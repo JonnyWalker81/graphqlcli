@@ -55,6 +55,7 @@ let lookup_keyword name =
   | "enum" -> Enum
   (* | "ID" -> ID *)
   | _ -> Name name
+;;
 
 let to_name tok =
   match tok with
@@ -62,3 +63,4 @@ let to_name tok =
   | Input -> "input"
   | Schema -> "schema"
   | _ -> failwith "unrecognized token"
+;;
