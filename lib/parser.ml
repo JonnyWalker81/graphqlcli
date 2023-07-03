@@ -197,11 +197,11 @@ and parse_definition parser =
   | Token.LeftBrace -> parse_executable_document parser
   | Token.Name "fragment" -> parse_fragment (next_token parser)
   | Token.Name "interface" -> parse_interface (next_token parser) description
-  | Token.Name "directive" -> parse_directive parser description
+  | Token.Name "directive" -> parse_directive_definition parser description
   | _ ->
     failwith (Printf.sprintf "unexpected definition: %s" (Token.show parser.cur_token))
 
-and parse_directive parser description =
+and parse_directive_definition parser description =
   let parser, ok = expect_peek_at parser in
   match ok with
   | true ->
@@ -479,16 +479,34 @@ and parse_description parser =
   | Token.StringLiteral s -> parser, Some s
   | _ -> parser, None
 
+and parse_directives parser =
+  let rec parse_directives' parser directives =
+    match parser.cur_token with
+    | Token.At ->
+      let parser = next_token parser in
+      let* parser, name = parse_name parser in
+      let directive =
+        Directive.{ name; args = None; locations = []; description = None }
+      in
+      parse_directives' (next_token parser) (directive :: directives)
+    | _ ->
+      (match directives with
+      | [] -> Ok (parser, None)
+      | _ -> Ok (parser, Some (List.rev directives)))
+  in
+  parse_directives' parser []
+
 and parse_scalar parser description =
   let* parser, name = parse_name parser in
   Ok (parser, Definition.TypeDefinition (TypeDefinition.Scalar { name; description }))
 
 and parse_schema parser description =
+  let* parser, directives = parse_directives parser in
   match parser.cur_token with
-  | Token.LeftBrace -> parse_schema_def (next_token parser) description
+  | Token.LeftBrace -> parse_schema_def (next_token parser) description directives
   | _ -> Error "parse_schema: expected left brace"
 
-and parse_schema_def parser description =
+and parse_schema_def parser description directives =
   let rec parse_schema_def' parser fields =
     match parser.peek_token with
     | Token.RightBrace | Token.Eof -> Ok (parser, List.rev fields)
@@ -512,6 +530,7 @@ and parse_schema_def parser description =
           { query = make_schema_op query
           ; mutation = make_schema_op mutation
           ; subscription = make_schema_op subscription
+          ; directives
           ; description
           } )
   | _ -> Error "parse_schema_def: expected closing right brace"
@@ -548,6 +567,7 @@ and parse_schema_op_type parser =
 
 and parse_type parser description =
   let* parser, name = parse_name parser in
+  let* parser, directives = parse_directives parser in
   let* parser, implements = parse_implements parser in
   let parser, ok = expect_peek_left_brace parser in
   match parser, ok with
@@ -807,7 +827,7 @@ module Test = struct
     let input =
       {|
               "schema description"
-                    schema {
+                    schema @skip @example {
                       query: MyQuery
                       "mutation description"
                       mutation: MyMutation
@@ -823,7 +843,13 @@ module Test = struct
              { query = (Some { name = "MyQuery"; description = None });
            mutation =
            (Some { name = "MyMutation"; description = (Some "mutation description") });
-           subscription = None; description = (Some "schema description") }
+           subscription = None;
+           directives =
+           (Some [{ name = "skip"; args = None; locations = []; description = None };
+                   { name = "example"; args = None; locations = []; description = None
+                     }
+                   ]);
+           description = (Some "schema description") }
 
              (Scalar { name = "Status"; description = None })
 
