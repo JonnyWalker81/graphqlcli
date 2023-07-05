@@ -485,9 +485,8 @@ and parse_directives parser =
     | Token.At ->
       let parser = next_token parser in
       let* parser, name = parse_name parser in
-      let directive =
-        Directive.{ name; args = None; locations = []; description = None }
-      in
+      let* parser, args = parse_directive_args parser in
+      let directive = Directive.{ name; args; locations = []; description = None } in
       parse_directives' (next_token parser) (directive :: directives)
     | _ ->
       (match directives with
@@ -495,6 +494,8 @@ and parse_directives parser =
       | _ -> Ok (parser, Some (List.rev directives)))
   in
   parse_directives' parser []
+
+and parse_directive_args parser = Ok (parser, None)
 
 and parse_scalar parser description =
   let* parser, name = parse_name parser in
