@@ -230,7 +230,9 @@ and parse_directive_definition parser description =
           parse_locations (next_token parser) (loc :: locations)
         | _ ->
           Ok
-            (parser, Definition.Directive Directive.{ name; args; locations; description })
+            ( parser
+            , Definition.Directive
+                DirectiveDefinition.{ name; args; locations; description } )
       in
       parse_locations (next_token parser) [ name_to_directive_location parser.peek_token ]
     | false -> failwith_parser_error parser "parse_directive: expected 'on'")
@@ -382,7 +384,10 @@ and parse_variables parser =
       | parser, true ->
         let parser = next_token parser in
         let* parser, gql_type = parse_graphql_type parser in
-        let var = ArgumentDefiniton.{ name; ty = gql_type; description = None } in
+        let var =
+          ArgumentDefiniton.
+            { name; ty = gql_type; default_value = None; description = None }
+        in
         parse_variables' parser (var :: vars)
       | _ -> failwith_parser_error parser "parse_variables: expected colon after var name")
     | Token.RightParen -> Ok (parser, Some vars)
@@ -486,7 +491,9 @@ and parse_directives parser =
       let parser = next_token parser in
       let* parser, name = parse_name parser in
       let* parser, args = parse_directive_args parser in
-      let directive = Directive.{ name; args; locations = []; description = None } in
+      let directive =
+        DirectiveDefinition.{ name; args; locations = []; description = None }
+      in
       parse_directives' (next_token parser) (directive :: directives)
     | _ ->
       (match directives with
@@ -675,8 +682,15 @@ and parse_field_args parser =
           let parser = next_token parser in
           let parser = next_token parser in
           let* parser, gql_type = parse_graphql_type parser in
+          let parser, default_value =
+            match parser.peek_token with
+            | Token.Equal -> parse_value_literal parser
+            | _ -> parser, None
+          in
           let parser, arg =
-            parser, ArgumentDefiniton.{ name; ty = gql_type; description = arg_desc }
+            ( parser
+            , ArgumentDefiniton.
+                { name; ty = gql_type; default_value; description = arg_desc } )
           in
           parse_field_args' parser (arg :: args)
         | _ -> failwith "parse_field_args")
@@ -694,6 +708,16 @@ and parse_field_args parser =
            (Token.show parser.peek_token))
   in
   parse_field_args' parser []
+
+and parse_value_literal parser =
+  let parser = next_token parser in
+  match parser.peek_token with
+  | Token.StringLiteral s ->
+    let parser = next_token parser in
+    parser, Some (Value.String s)
+  | Token.Number { kind; value } ->
+    next_token parser, Some (Value.Int (int_of_string value))
+  | _ -> parser, None
 
 and parse_graphql_type parser =
   match parser.cur_token with
@@ -742,13 +766,11 @@ let parse_document input =
   document
 ;;
 
-let show_type_definition = TypeDefinition.show
-
 let string_of_definition = function
-  | Definition.TypeDefinition def -> Fmt.str "  %s@." (show_type_definition def)
+  | Definition.TypeDefinition def -> Fmt.str "  %s@." (TypeDefinition.show def)
   | Definition.Schema s -> Fmt.str "  %s@." (Schema.show s)
   | Definition.ExecutableDefinition e -> Fmt.str "  %s@." (ExecutableDefinition.show e)
-  | Definition.Directive d -> Fmt.str "  %s@." (Directive.show d)
+  | Definition.Directive d -> Fmt.str "  %s@." (DirectiveDefinition.show d)
 ;;
 
 let print_node = function
@@ -846,9 +868,10 @@ module Test = struct
            (Some { name = "MyMutation"; description = (Some "mutation description") });
            subscription = None;
            directives =
-           (Some [{ name = "skip"; args = None; locations = []; description = None };
-                   { name = "example"; args = None; locations = []; description = None
-                     }
+           (Some [{ name = "skip"; args = None; locations = []; default_value = None;
+                    description = None };
+                   { name = "example"; args = None; locations = [];
+                     default_value = None; description = None }
                    ]);
            description = (Some "schema description") }
 
@@ -1332,7 +1355,7 @@ directive @example on FIELD_DEFINITION
       Document: [
           { name = "example"; args = None;
         locations = [(TypeSystemDirectiveLocation FIELD_DEFINITION)];
-        description = (Some "directive desc") }
+        default_value = None; description = (Some "directive desc") }
 
       ]
   |}]
@@ -1360,7 +1383,7 @@ bar: String
         [(TypeSystemDirectiveLocation INTERFACE);
           (TypeSystemDirectiveLocation OBJECT);
           (TypeSystemDirectiveLocation FIELD_DEFINITION)];
-        description = None }
+        default_value = None; description = None }
 
           (Object
          { name = "Foo"; implements = [];
@@ -1394,9 +1417,40 @@ bar: String
         locations =
         [(TypeSystemDirectiveLocation ENUM_VALUE);
           (TypeSystemDirectiveLocation FIELD_DEFINITION)];
-        description = None }
+        default_value = None; description = None }
 
       ]
 |}]
+  ;;
+
+  let%expect_test "testDirectiveWithArgDefaultValue" =
+    let input =
+      {|
+
+directive @deprecated(
+  reason: String = "No longer supported"
+  id: Int = 42
+) on FIELD_DEFINITION | ENUM_VALUE
+    |}
+    in
+    expect_document input;
+    [%expect {|
+
+    |}]
+  ;;
+
+  let%expect_test "testArgDirectiveWithDefaultValue" =
+    let input =
+      {|
+
+type ExampleType {
+  newField: String
+  oldField: String @deprecated(reason: "Use `newField`.")
+}    |}
+    in
+    expect_document input;
+    [%expect {|
+
+    |}]
   ;;
 end

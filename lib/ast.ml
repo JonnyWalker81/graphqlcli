@@ -1,3 +1,8 @@
+open Core
+
+(* open Base *)
+(* open Sexplib.Std *)
+
 (* module Field = struct *)
 (*   type field_type = { name : string } *)
 (*   [@@deriving show { with_path = false }, sexp] *)
@@ -7,6 +12,45 @@
 (*   | NonNullNamedType of graphql_type *)
 (*   | NonNullListType of graphql_type list *)
 (* [@@deriving show { with_path = false }, sexp] *)
+
+(* module Values = struct *)
+(*   (\* type 'a t = (string, 'a, String.comparator_witness) Map.t *\) *)
+(*   type 'a t = (string, 'a) Hashtbl.t *)
+
+(*   let pp ppr values = Fmt.str "map" *)
+
+(*   (\* let pp pp_key pp_value ppf values = *\) *)
+(*   (\*   Hashtbl.iteri values ~f:(fun ~key ~data -> *\) *)
+(*   (\*       Format.fprintf ppf "@[<1>%a: %a@]@." pp_key key pp_value data) *\) *)
+(*   (\* ;; *\) *)
+(*   (\* let pp ppf values = *\) *)
+(*   (\*   Hashtbl.iteri values ~f:(fun ~key ~data -> *\) *)
+(*   (\*       Format.fprintf ppf "@[<1>%s: %s@]@." key data) *\) *)
+(* end *)
+
+module Value = struct
+  type t =
+    | String of string
+    | Int of int
+    | Float of float
+    | Boolean of bool
+    | Enum of string
+    | Null
+    | Object of (string * t) list
+    | List of t list
+  [@@deriving show { with_path = false }, sexp]
+
+  (* and string_map = (string, t, String.comparator_witness) Map.t *)
+  (* [@@deriving show { with_path = false }, sexp] *)
+
+  (* let to_string = function *)
+  (*   | String s -> Fmt.strf "%s" s *)
+  (*   | _ -> Fmt.str "" *)
+
+  (* let pp ppf values = *)
+  (*   Hashtbl.iter values ~f:(fun ~key ~data -> *)
+  (*       Format.fprintf ppf "@[<1>%s: %s@]@." key (to_string data)) *)
+end
 
 module GraphqlType = struct
   type t =
@@ -20,6 +64,7 @@ module ArgumentDefiniton = struct
   type t =
     { name : string
     ; ty : GraphqlType.t
+    ; default_value : Value.t option
     ; description : string option
     }
   [@@deriving show { with_path = false }, sexp]
@@ -60,7 +105,7 @@ module DirectiveLocation = struct
   [@@deriving show { with_path = false }, sexp]
 end
 
-module Directive = struct
+module DirectiveDefinition = struct
   type t =
     { name : string
     ; args : ArgumentDefiniton.t list option
@@ -197,7 +242,7 @@ module Schema = struct
     { query : BaseValue.t option
     ; mutation : BaseValue.t option
     ; subscription : BaseValue.t option
-    ; directives : Directive.t list option
+    ; directives : DirectiveDefinition.t list option
     ; description : string option
     }
   [@@deriving show { with_path = false }, sexp]
@@ -262,7 +307,7 @@ module Definition = struct
     | TypeDefinition of TypeDefinition.t
     | Schema of Schema.t
     | ExecutableDefinition of ExecutableDefinition.t
-    | Directive of Directive.t
+    | Directive of DirectiveDefinition.t
   [@@deriving show { with_path = false }, sexp]
 end
 

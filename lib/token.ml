@@ -2,6 +2,11 @@
 (*   someField: String *)
 (* } *)
 
+type number_kind =
+  | IntegerKind
+  | FloatKind
+[@@deriving show, eq, sexp]
+
 type t =
   | Type
   | Name of string
@@ -29,9 +34,11 @@ type t =
   | At
   | String
   | StringLiteral of string
-  | Float
-  | Integer
-  | Boolean
+  | Number of
+      { kind : number_kind
+      ; value : string
+      }
+  | Boolean of bool
   | Semicolon
   | Comment of string
   | ID

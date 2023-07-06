@@ -77,7 +77,6 @@ let rec read_while condition lexer acc =
 ;;
 
 let read_identifier lexer = read_while is_letter_or_digit lexer ""
-let read_number lexer = read_while is_digit lexer ""
 
 let rec skip_while condition lexer =
   let lexer, cond = condition lexer in
@@ -170,6 +169,11 @@ let read_ellipsis lexer =
   else lexer, Token.Illegal
 ;;
 
+let read_number lexer =
+  let lexer, number = read_while is_digit lexer "" in
+  lexer, Token.IntegerKind, number
+;;
+
 let next_token lexer =
   let lexer = skip_while is_whitespace lexer in
   let ch = lexer.ch in
@@ -195,6 +199,9 @@ let next_token lexer =
   | ch when is_letter ch ->
     let lexer, ident = read_identifier lexer in
     lexer, Token.lookup_keyword ident
+  | ch when is_digit ch ->
+    let lexer, kind, value = read_number lexer in
+    lexer, Token.Number { kind; value }
   | _ -> read_char lexer, Token.Illegal
 ;;
 
@@ -282,6 +289,7 @@ type Foo {
        }
 
        directive @example on FIELD
+        42
 
 |}
     in
