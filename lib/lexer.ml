@@ -397,8 +397,9 @@ type Foo {
       (Token.Name "example")
       (Token.Name "on")
       (Token.Name "FIELD")
+      Token.Number {kind = Token.IntegerKind; value = "42"}
       Token.Eof
-      Line Numbers: 44
+      Line Numbers: 45
 |}]
   ;;
 end

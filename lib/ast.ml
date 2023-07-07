@@ -60,11 +60,28 @@ module GraphqlType = struct
   [@@deriving show { with_path = false }, sexp]
 end
 
+module DirectiveArg = struct
+  type t =
+    { name : string
+    ; value : Value.t
+    }
+  [@@deriving show { with_path = false }, sexp]
+end
+
+module Directive = struct
+  type t =
+    { name : string
+    ; args : DirectiveArg.t list
+    }
+  [@@deriving show { with_path = false }, sexp]
+end
+
 module ArgumentDefiniton = struct
   type t =
     { name : string
     ; ty : GraphqlType.t
     ; default_value : Value.t option
+    ; directives : Directive.t list
     ; description : string option
     }
   [@@deriving show { with_path = false }, sexp]
@@ -108,7 +125,7 @@ end
 module DirectiveDefinition = struct
   type t =
     { name : string
-    ; args : ArgumentDefiniton.t list option
+    ; args : ArgumentDefiniton.t list
     ; locations : DirectiveLocation.t list
     ; description : string option
     }
@@ -118,8 +135,9 @@ end
 module Field = struct
   type t =
     { name : string
-    ; args : ArgumentDefiniton.t list option
+    ; args : ArgumentDefiniton.t list
     ; ty : GraphqlType.t
+    ; directives : Directive.t list
     ; description : string option
     }
   [@@deriving show { with_path = false }, sexp]
@@ -156,6 +174,16 @@ module UnionType = struct
   type t =
     { name : string
     ; members : BaseValue.t list
+    ; directives : Directive.t list
+    ; description : string option
+    }
+  [@@deriving show { with_path = false }, sexp]
+end
+
+module EnumMember = struct
+  type t =
+    { name : string
+    ; directives : Directive.t list
     ; description : string option
     }
   [@@deriving show { with_path = false }, sexp]
@@ -164,7 +192,8 @@ end
 module EnumType = struct
   type t =
     { name : string
-    ; values : BaseValue.t list
+    ; values : EnumMember.t list
+    ; directives : Directive.t list
     ; description : string option
     }
   [@@deriving show { with_path = false }, sexp]
@@ -214,6 +243,16 @@ module InterfaceType = struct
   type t =
     { name : string
     ; fields : Field.t list
+    ; directives : Directive.t list
+    ; description : string option
+    }
+  [@@deriving show { with_path = false }, sexp]
+end
+
+module ScalarType = struct
+  type t =
+    { name : string
+    ; directives : Directive.t list
     ; description : string option
     }
   [@@deriving show { with_path = false }, sexp]
@@ -221,7 +260,7 @@ end
 
 module TypeDefinition = struct
   type t =
-    | Scalar of BaseValue.t
+    | Scalar of ScalarType.t
     | Object of ObjectType.t
     | Interface of InterfaceType.t
     | Union of UnionType.t
@@ -242,7 +281,7 @@ module Schema = struct
     { query : BaseValue.t option
     ; mutation : BaseValue.t option
     ; subscription : BaseValue.t option
-    ; directives : DirectiveDefinition.t list option
+    ; directives : Directive.t list
     ; description : string option
     }
   [@@deriving show { with_path = false }, sexp]

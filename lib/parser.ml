@@ -198,8 +198,7 @@ and parse_definition parser =
   | Token.Name "fragment" -> parse_fragment (next_token parser)
   | Token.Name "interface" -> parse_interface (next_token parser) description
   | Token.Name "directive" -> parse_directive_definition parser description
-  | _ ->
-    failwith (Printf.sprintf "unexpected definition: %s" (Token.show parser.cur_token))
+  | _ -> failwith_parser_error parser "unexpected definition"
 
 and parse_directive_definition parser description =
   let parser, ok = expect_peek_at parser in
@@ -212,7 +211,7 @@ and parse_directive_definition parser description =
       | Token.LeftParen ->
         let parser = next_token parser in
         parse_field_args parser
-      | _ -> Ok (parser, None)
+      | _ -> Ok (parser, [])
     in
     let parser, ok = expect_peek_on parser in
     (match ok with
@@ -240,14 +239,30 @@ and parse_directive_definition parser description =
 
 and parse_interface parser description =
   let* parser, name = parse_name parser in
+  (* let* parser, directives = parse_directives (next_token parser) in *)
+  let () = print_parser_state ~msg:"parse_interface..." parser in
+  let* parser, directives =
+    match peek_is parser Token.At with
+    | true ->
+      let* parser, directives =
+        match parse_directives (next_token parser) with
+        | Ok (parser, directives) when List.length directives > 0 ->
+          (* let parser = next_token parser in *)
+          Ok (parser, directives)
+        | _ -> Ok (parser, [])
+      in
+      Ok (parser, directives)
+    | false -> Ok (parser, [])
+  in
+  let () = print_parser_state ~msg:"parse_interface (after)..." parser in
   let parser, ok = expect_peek_left_brace parser in
   match parser, ok with
   | parser, true ->
     let* parser, fields = parse_type_definition parser in
     Ok
       ( parser
-      , Definition.TypeDefinition (TypeDefinition.Interface { name; fields; description })
-      )
+      , Definition.TypeDefinition
+          (TypeDefinition.Interface { name; fields; directives; description }) )
   | _, false -> Error "parse_interface: expected left brace"
 
 and parse_fragment parser =
@@ -386,7 +401,12 @@ and parse_variables parser =
         let* parser, gql_type = parse_graphql_type parser in
         let var =
           ArgumentDefiniton.
-            { name; ty = gql_type; default_value = None; description = None }
+            { name
+            ; ty = gql_type
+            ; default_value = None
+            ; directives = []
+            ; description = None
+            }
         in
         parse_variables' parser (var :: vars)
       | _ -> failwith_parser_error parser "parse_variables: expected colon after var name")
@@ -412,6 +432,19 @@ and parse_input_type parser description =
 
 and parse_enum parser description =
   let* parser, name = parse_name parser in
+  let* parser, directives =
+    match peek_is parser Token.At with
+    | true ->
+      let* parser, directives =
+        match parse_directives (next_token parser) with
+        | Ok (parser, directives) when List.length directives > 0 ->
+          (* let parser = next_token parser in *)
+          Ok (parser, directives)
+        | _ -> Ok (parser, [])
+      in
+      Ok (parser, directives)
+    | false -> Ok (parser, [])
+  in
   let parser, ok = expect_peek_left_brace parser in
   if not ok
   then failwith "parse_enum: expected left brace"
@@ -430,20 +463,49 @@ and parse_enum parser description =
       | Token.Comment _ -> parse_enum_value (next_token parser) vals
       | _ ->
         let* parser, name = parse_name parser in
+        let* parser, directives =
+          match peek_is parser Token.At with
+          | true ->
+            let* parser, directives =
+              match parse_directives (next_token parser) with
+              | Ok (parser, directives) when List.length directives > 0 ->
+                (* let parser = next_token parser in *)
+                Ok (parser, directives)
+              | _ -> Ok (parser, [])
+            in
+            Ok (parser, directives)
+          | false -> Ok (parser, [])
+        in
         let parser = next_token parser in
-        parse_enum_value parser (BaseValue.{ name; description = enum_desc } :: vals)
+        parse_enum_value
+          parser
+          (EnumMember.{ name; directives; description = enum_desc } :: vals)
     in
     let* parser, vals = parse_enum_value parser [] in
     Ok
       ( parser
       , Definition.TypeDefinition
-          (TypeDefinition.Enum EnumType.{ name; values = vals; description }) ))
+          (TypeDefinition.Enum EnumType.{ name; values = vals; directives; description })
+      ))
 
 and parse_union parser description =
   let* parser, union_name = parse_name parser in
+  let* parser, directives =
+    match peek_is parser Token.At with
+    | true ->
+      let* parser, directives =
+        match parse_directives (next_token parser) with
+        | Ok (parser, directives) when List.length directives > 0 ->
+          (* let parser = next_token parser in *)
+          Ok (parser, directives)
+        | _ -> Ok (parser, [])
+      in
+      Ok (parser, directives)
+    | false -> Ok (parser, [])
+  in
   let parser, ok = expect_peek_equal parser in
   if not ok
-  then failwith "parse_union: expected ="
+  then failwith_parser_error parser "parse_union: expected ="
   else (
     let parser = next_token parser in
     let parser, first_union_desc =
@@ -477,7 +539,8 @@ and parse_union parser description =
     Ok
       ( parser
       , Definition.TypeDefinition
-          (TypeDefinition.Union { name = union_name; members; description }) ))
+          (TypeDefinition.Union { name = union_name; members; directives; description })
+      ))
 
 and parse_description parser =
   match parser.cur_token with
@@ -491,22 +554,57 @@ and parse_directives parser =
       let parser = next_token parser in
       let* parser, name = parse_name parser in
       let* parser, args = parse_directive_args parser in
-      let directive =
-        DirectiveDefinition.{ name; args; locations = []; description = None }
-      in
-      parse_directives' (next_token parser) (directive :: directives)
-    | _ ->
-      (match directives with
-      | [] -> Ok (parser, None)
-      | _ -> Ok (parser, Some (List.rev directives)))
+      let directive = Directive.{ name; args } in
+      (* parse_directives' (next_token parser) (directive :: directives) *)
+      parse_directives' parser (directive :: directives)
+    | _ -> Ok (parser, List.rev directives)
   in
   parse_directives' parser []
 
-and parse_directive_args parser = Ok (parser, None)
+and parse_directive_args parser =
+  match parser.peek_token with
+  | Token.LeftParen ->
+    let parser = next_token parser in
+    let rec parse_directive_args' parser args =
+      match parser.peek_token with
+      | Token.RightParen ->
+        let parser = next_token parser in
+        Ok (parser, List.rev args)
+      | Token.Name _ ->
+        let parser = next_token parser in
+        let* parser, name = parse_name parser in
+        (match peek_is parser Token.Colon with
+        | true ->
+          let parser, value = parse_value_literal parser in
+          (match value with
+          | Some v ->
+            parse_directive_args' parser (DirectiveArg.{ name; value = v } :: args)
+          | None -> parse_directive_args' parser args)
+        | false -> failwith "parse_directive_args: expected colon after arg name")
+      | _ -> failwith "parse_directive_args: expected name or right paren"
+    in
+    parse_directive_args' parser []
+  | _ -> Ok (parser, [])
 
 and parse_scalar parser description =
   let* parser, name = parse_name parser in
-  Ok (parser, Definition.TypeDefinition (TypeDefinition.Scalar { name; description }))
+  let* parser, directives =
+    match peek_is parser Token.At with
+    | true ->
+      let* parser, directives =
+        match parse_directives (next_token parser) with
+        | Ok (parser, directives) when List.length directives > 0 ->
+          (* let parser = next_token parser in *)
+          Ok (parser, directives)
+        | _ -> Ok (parser, [])
+      in
+      Ok (parser, directives)
+    | false -> Ok (parser, [])
+  in
+  Ok
+    ( parser
+    , Definition.TypeDefinition (TypeDefinition.Scalar { name; directives; description })
+    )
 
 and parse_schema parser description =
   let* parser, directives = parse_directives parser in
@@ -574,8 +672,17 @@ and parse_schema_op_type parser =
          (Token.show parser.peek_token))
 
 and parse_type parser description =
+  let () = print_parser_state ~msg:"parse_type..." parser in
   let* parser, name = parse_name parser in
-  let* parser, directives = parse_directives parser in
+  let* parser, directives =
+    match peek_is parser Token.At with
+    | true ->
+      let* parser, directives = parse_directives (next_token parser) in
+      (* let parser = next_token parser in *)
+      Ok (parser, directives)
+    | false -> Ok (parser, [])
+  in
+  let () = print_parser_state ~msg:"parse_type..." parser in
   let* parser, implements = parse_implements parser in
   let parser, ok = expect_peek_left_brace parser in
   match parser, ok with
@@ -607,6 +714,7 @@ and parse_implements parser =
   | _ -> Ok (parser, [])
 
 and parse_type_definition parser =
+  let () = print_parser_state ~msg:"parse_type_definition..." parser in
   let rec parse_type_def' parser fields =
     let parser, description =
       match parser.peek_token with
@@ -626,28 +734,41 @@ and parse_type_definition parser =
         | Token.LeftParen ->
           let parser = next_token parser in
           parse_field_args parser
-        | _ -> Ok (parser, None)
+        | _ -> Ok (parser, [])
       in
       (match parser.peek_token with
       | Token.Colon ->
         let parser = next_token parser in
         let parser = next_token parser in
         let* parser, ty = parse_graphql_type parser in
-        let field = Field.{ name; args; ty; description } in
+        let* parser, directives =
+          match parser.peek_token with
+          | Token.At ->
+            let* parser, directives = parse_directives (next_token parser) in
+            (* let parser = next_token parser in *)
+            Ok (parser, directives)
+          | _ -> Ok (parser, [])
+        in
+        let field = Field.{ name; args; directives; ty; description } in
         parse_type_def' parser (field :: fields)
       | Token.Name _ ->
         let parser = next_token parser in
         let* parser, ty = parse_graphql_type parser in
-        let field = Field.{ name; args; ty; description } in
+        let* parser, directives =
+          match parser.peek_token with
+          | Token.At ->
+            let* parser, directives = parse_directives (next_token parser) in
+            (* let parser = next_token parser in *)
+            Ok (parser, directives)
+          | _ -> Ok (parser, [])
+        in
+        let field = Field.{ name; args; ty; directives; description } in
         parse_type_def' parser (field :: fields)
       | _ -> failwith "parse_type_definition: expected a name or a colon")
     | _ ->
-      failwith
-        (Printf.sprintf
-           "parse_type_definition: expected right brace, comment, or name: cur: %s, \
-            peek: %s"
-           (Token.show parser.cur_token)
-           (Token.show parser.peek_token))
+      failwith_parser_error
+        parser
+        "parse_type_definition: expected right brace, comment, or name"
   in
   let* parser, td = parse_type_def' parser [] in
   let parser, ok = expect_peek_right_brace parser in
@@ -671,7 +792,7 @@ and parse_field_args parser =
         then next_token parser
         else parser
       in
-      Ok (parser, Some (List.rev args))
+      Ok (parser, List.rev args)
     | Token.Name _ | Token.Type | Token.Input ->
       let parser = next_token parser in
       (match parser.peek_token with
@@ -687,10 +808,16 @@ and parse_field_args parser =
             | Token.Equal -> parse_value_literal parser
             | _ -> parser, None
           in
+          let* parser, directives =
+            match peek_is parser Token.At with
+            | true -> parse_directives (next_token parser)
+            | false -> Ok (parser, [])
+          in
           let parser, arg =
             ( parser
             , ArgumentDefiniton.
-                { name; ty = gql_type; default_value; description = arg_desc } )
+                { name; ty = gql_type; default_value; directives; description = arg_desc }
+            )
           in
           parse_field_args' parser (arg :: args)
         | _ -> failwith "parse_field_args")
@@ -700,12 +827,12 @@ and parse_field_args parser =
              "expected args: cur: %s, peek: %s"
              (Token.show parser.cur_token)
              (Token.show parser.peek_token)))
-    | _ ->
-      failwith
-        (Printf.sprintf
-           "parse_field_args: expected name - cur: %s, peek: %s"
-           (Token.show parser.cur_token)
-           (Token.show parser.peek_token))
+    | _ -> failwith_parser_error parser "parse_field_args..."
+    (* failwith *)
+    (*   (Printf.sprintf *)
+    (*      "parse_field_args: expected name - cur: %s, peek: %s" *)
+    (*      (Token.show parser.cur_token) *)
+    (*      (Token.show parser.peek_token)) *)
   in
   parse_field_args' parser []
 
@@ -717,6 +844,43 @@ and parse_value_literal parser =
     parser, Some (Value.String s)
   | Token.Number { kind; value } ->
     next_token parser, Some (Value.Int (int_of_string value))
+  | Token.LeftBracket ->
+    (* let parser = next_token parser in *)
+    let rec parse_list_values parser vals =
+      let parser = chomp parser Token.Comma in
+      match parser.peek_token with
+      | Token.RightBracket ->
+        let parser = next_token parser in
+        parser, Some (Value.List (List.rev vals))
+      | _ ->
+        let parser, value = parse_value_literal parser in
+        (match value with
+        | Some v -> parse_list_values parser (v :: vals)
+        | _ -> parse_list_values parser vals)
+    in
+    parse_list_values parser []
+  | Token.LeftBrace ->
+    let parser = next_token parser in
+    let rec parse_object_values parser pairs =
+      let parser = chomp parser Token.Comma in
+      match parser.peek_token with
+      | Token.RightBrace ->
+        let parser = next_token parser in
+        parser, Some (Value.Object (List.rev pairs))
+      | Token.Name name ->
+        let parser = next_token parser in
+        (match peek_is parser Token.Colon with
+        | true ->
+          let parser = next_token parser in
+          let parser, value = parse_value_literal parser in
+          (match value with
+          | Some v -> parse_object_values parser ((name, v) :: pairs)
+          | _ -> parse_object_values parser pairs)
+        | _ -> failwith "parse_value_literal: expected colon while parsing object literal")
+      | _ ->
+        failwith_parser_error parser "parse_value_literal: expected right brace or name"
+    in
+    parse_object_values parser []
   | _ -> parser, None
 
 and parse_graphql_type parser =
@@ -820,24 +984,24 @@ module Test = struct
              (Object
             { name = "Query"; implements = [];
               fields =
-              [{ name = "foo"; args = None; ty = (NamedType "String");
+              [{ name = "foo"; args = []; ty = (NamedType "String"); directives = [];
                  description = (Some "field description") };
-                { name = "bar"; args = None; ty = (NonNullType (NamedType "String"));
+                { name = "bar"; args = []; ty = (NonNullType (NamedType "String"));
+                  directives = []; description = None };
+                { name = "baz"; args = []; ty = (ListType (NamedType "String"));
+                  directives = []; description = None };
+                { name = "qux"; args = [];
+                  ty = (NonNullType (ListType (NamedType "String"))); directives = [];
                   description = None };
-                { name = "baz"; args = None; ty = (ListType (NamedType "String"));
-                  description = None };
-                { name = "qux"; args = None;
-                  ty = (NonNullType (ListType (NamedType "String")));
-                  description = None };
-                { name = "get"; args = None;
+                { name = "get"; args = [];
                   ty = (NonNullType (ListType (NonNullType (NamedType "String"))));
-                  description = None };
-                { name = "set"; args = None;
+                  directives = []; description = None };
+                { name = "set"; args = [];
                   ty =
                   (NonNullType
                      (ListType
                         (NonNullType (ListType (NonNullType (NamedType "String"))))));
-                  description = None }
+                  directives = []; description = None }
                 ];
               description = (Some "description for type") })
 
@@ -862,24 +1026,18 @@ module Test = struct
     expect_document input;
     [%expect
       {|
-         Document: [
-             { query = (Some { name = "MyQuery"; description = None });
-           mutation =
-           (Some { name = "MyMutation"; description = (Some "mutation description") });
-           subscription = None;
-           directives =
-           (Some [{ name = "skip"; args = None; locations = []; default_value = None;
-                    description = None };
-                   { name = "example"; args = None; locations = [];
-                     default_value = None; description = None }
-                   ]);
-           description = (Some "schema description") }
+      Document: [
+          { query = (Some { name = "MyQuery"; description = None });
+        mutation =
+        (Some { name = "MyMutation"; description = (Some "mutation description") });
+        subscription = None;
+        directives =
+        [{ name = "skip"; args = [] }; { name = "example"; args = [] }];
+        description = (Some "schema description") }
 
-             (Scalar { name = "Status"; description = None })
+          (Scalar { name = "Status"; description = None })
 
-         ]
-
-                 |}]
+      ] |}]
   ;;
 
   let%expect_test "testFieldWithArgs" =
@@ -910,11 +1068,12 @@ module Test = struct
            fields =
            [{ name = "fooQuery";
               args =
-              (Some [{ name = "arg1"; ty = (NamedType "Int"); description = None };
-                      { name = "arg2"; ty = (NonNullType (NamedType "Boolean"));
-                        description = None }
-                      ]);
-              ty = (NamedType "String"); description = None }
+              [{ name = "arg1"; ty = (NamedType "Int"); default_value = None;
+                 description = None };
+                { name = "arg2"; ty = (NonNullType (NamedType "Boolean"));
+                  default_value = None; description = None }
+                ];
+              ty = (NamedType "String"); directives = []; description = None }
              ];
            description = None })
 
@@ -923,22 +1082,22 @@ module Test = struct
            fields =
            [{ name = "fooMut";
               args =
-              (Some [{ name = "fooArg1"; ty = (NamedType "String");
-                       description = None };
-                      { name = "fooArg2"; ty = (NonNullType (NamedType "Int"));
-                        description = (Some "arg description") }
-                      ]);
+              [{ name = "fooArg1"; ty = (NamedType "String"); default_value = None;
+                 description = None };
+                { name = "fooArg2"; ty = (NonNullType (NamedType "Int"));
+                  default_value = None; description = (Some "arg description") }
+                ];
               ty = (NonNullType (ListType (NonNullType (NamedType "String"))));
-              description = None };
+              directives = []; description = None };
              { name = "bar";
                args =
-               (Some [{ name = "barArg1"; ty = (NonNullType (NamedType "Boolean"));
-                        description = None };
-                       { name = "barArg2"; ty = (NamedType "Boolean");
-                         description = None }
-                       ]);
+               [{ name = "barArg1"; ty = (NonNullType (NamedType "Boolean"));
+                  default_value = None; description = None };
+                 { name = "barArg2"; ty = (NamedType "Boolean");
+                   default_value = None; description = None }
+                 ];
                ty = (NonNullType (ListType (NonNullType (NamedType "String"))));
-               description = None }
+               directives = []; description = None }
              ];
            description = None })
 
@@ -1046,7 +1205,7 @@ module Test = struct
                (Object
               { name = "Mutation"; implements = [];
                 fields =
-                [{ name = "foo"; args = None; ty = (NamedType "String");
+                [{ name = "foo"; args = []; ty = (NamedType "String"); directives = [];
                    description = None }
                   ];
                 description = None })
@@ -1074,12 +1233,12 @@ module Test = struct
                (Input
               { name = "QueryInput";
                 fields =
-                [{ name = "category"; args = None; ty = (NamedType "String");
-                   description = None };
-                  { name = "name"; args = None; ty = (NonNullType (NamedType "String"));
-                    description = (Some "input field desc") };
-                  { name = "labels"; args = None;
-                    ty = (ListType (NonNullType (NamedType "String")));
+                [{ name = "category"; args = []; ty = (NamedType "String");
+                   directives = []; description = None };
+                  { name = "name"; args = []; ty = (NonNullType (NamedType "String"));
+                    directives = []; description = (Some "input field desc") };
+                  { name = "labels"; args = [];
+                    ty = (ListType (NonNullType (NamedType "String"))); directives = [];
                     description = None }
                   ];
                 description = (Some "Input description") })
@@ -1109,15 +1268,16 @@ module Test = struct
                 fields =
                 [{ name = "category";
                    args =
-                   (Some [{ name = "id"; ty = (NamedType "UUID"); description = None };
-                           { name = "name"; ty = (NamedType "String");
-                             description = None }
-                           ]);
-                   ty = (NamedType "String"); description = None };
-                  { name = "name"; args = None; ty = (NonNullType (NamedType "String"));
-                    description = None };
-                  { name = "labels"; args = None;
-                    ty = (ListType (NonNullType (NamedType "String")));
+                   [{ name = "id"; ty = (NamedType "UUID"); default_value = None;
+                      description = None };
+                     { name = "name"; ty = (NamedType "String"); default_value = None;
+                       description = None }
+                     ];
+                   ty = (NamedType "String"); directives = []; description = None };
+                  { name = "name"; args = []; ty = (NonNullType (NamedType "String"));
+                    directives = []; description = None };
+                  { name = "labels"; args = [];
+                    ty = (ListType (NonNullType (NamedType "String"))); directives = [];
                     description = None }
                   ];
                 description = None })
@@ -1145,12 +1305,12 @@ module Test = struct
                 fields =
                 [{ name = "category";
                    args =
-                   (Some [{ name = "input"; ty = (NonNullType (NamedType "String"));
-                            description = None };
-                           { name = "type"; ty = (NamedType "String");
-                             description = None }
-                           ]);
-                   ty = (NamedType "String"); description = None }
+                   [{ name = "input"; ty = (NonNullType (NamedType "String"));
+                      default_value = None; description = None };
+                     { name = "type"; ty = (NamedType "String"); default_value = None;
+                       description = None }
+                     ];
+                   ty = (NamedType "String"); directives = []; description = None }
                   ];
                 description = None })
 
@@ -1198,7 +1358,8 @@ query foo($var1: String){
          { name = "foo"; operation = Query;
            args = (Some [{ name = "var1"; value = "$var1" }]);
            variables =
-           (Some [{ name = "$var1"; ty = (NamedType "String"); description = None }
+           (Some [{ name = "$var1"; ty = (NamedType "String");
+                    default_value = None; description = None }
                    ]);
            selection = [(Field "field")] })
 
@@ -1226,7 +1387,8 @@ query foo($var1: String){
          { name = "foo"; operation = Query;
            args = (Some [{ name = "var1"; value = "$var1" }]);
            variables =
-           (Some [{ name = "$var1"; ty = (NamedType "String"); description = None }
+           (Some [{ name = "$var1"; ty = (NamedType "String");
+                    default_value = None; description = None }
                    ]);
            selection = [(SpreadField "field")] })
 
@@ -1276,12 +1438,12 @@ fragment Actions on Actions {
           (Interface
          { name = "Foo";
            fields =
-           [{ name = "bar"; args = None; ty = (NamedType "String");
+           [{ name = "bar"; args = []; ty = (NamedType "String"); directives = [];
               description = None };
-             { name = "baz"; args = None; ty = (NonNullType (NamedType "String"));
-               description = (Some "field desc") };
-             { name = "var"; args = None;
-               ty = (NonNullType (ListType (NamedType "String")));
+             { name = "baz"; args = []; ty = (NonNullType (NamedType "String"));
+               directives = []; description = (Some "field desc") };
+             { name = "var"; args = [];
+               ty = (NonNullType (ListType (NamedType "String"))); directives = [];
                description = (Some "field block desc") }
              ];
            description = (Some "interface description") })
@@ -1305,9 +1467,9 @@ type Person implements NamedEntity {
           (Object
          { name = "Person"; implements = ["NamedEntity"];
            fields =
-           [{ name = "name"; args = None; ty = (NamedType "String");
+           [{ name = "name"; args = []; ty = (NamedType "String"); directives = [];
               description = None };
-             { name = "age"; args = None; ty = (NamedType "Int");
+             { name = "age"; args = []; ty = (NamedType "Int"); directives = [];
                description = None }
              ];
            description = None })
@@ -1332,9 +1494,9 @@ type Person implements NamedEntity & ValuedEntity{
           (Object
          { name = "Person"; implements = ["NamedEntity"; "ValuedEntity"];
            fields =
-           [{ name = "name"; args = None; ty = (NamedType "String");
+           [{ name = "name"; args = []; ty = (NamedType "String"); directives = [];
               description = None };
-             { name = "age"; args = None; ty = (NamedType "Int");
+             { name = "age"; args = []; ty = (NamedType "Int"); directives = [];
                description = None }
              ];
            description = None })
@@ -1353,9 +1515,9 @@ directive @example on FIELD_DEFINITION
     [%expect
       {|
       Document: [
-          { name = "example"; args = None;
+          { name = "example"; args = [];
         locations = [(TypeSystemDirectiveLocation FIELD_DEFINITION)];
-        default_value = None; description = (Some "directive desc") }
+        description = (Some "directive desc") }
 
       ]
   |}]
@@ -1378,17 +1540,17 @@ bar: String
     [%expect
       {|
       Document: [
-          { name = "example"; args = None;
+          { name = "example"; args = [];
         locations =
         [(TypeSystemDirectiveLocation INTERFACE);
           (TypeSystemDirectiveLocation OBJECT);
           (TypeSystemDirectiveLocation FIELD_DEFINITION)];
-        default_value = None; description = None }
+        description = None }
 
           (Object
          { name = "Foo"; implements = [];
            fields =
-           [{ name = "bar"; args = None; ty = (NamedType "String");
+           [{ name = "bar"; args = []; ty = (NamedType "String"); directives = [];
               description = None }
              ];
            description = None })
@@ -1413,11 +1575,13 @@ bar: String
       Document: [
           { name = "deprecated";
         args =
-        (Some [{ name = "reason"; ty = (NamedType "String"); description = None }]);
+        [{ name = "reason"; ty = (NamedType "String"); default_value = None;
+           description = None }
+          ];
         locations =
         [(TypeSystemDirectiveLocation ENUM_VALUE);
           (TypeSystemDirectiveLocation FIELD_DEFINITION)];
-        default_value = None; description = None }
+        description = None }
 
       ]
 |}]
@@ -1434,7 +1598,23 @@ directive @deprecated(
     |}
     in
     expect_document input;
-    [%expect {|
+    [%expect
+      {|
+      Document: [
+          { name = "deprecated";
+        args =
+        [{ name = "reason"; ty = (NamedType "String");
+           default_value = (Some (String "No longer supported"));
+           description = None };
+          { name = "id"; ty = (NamedType "Int"); default_value = (Some (Int 42));
+            description = None }
+          ];
+        locations =
+        [(TypeSystemDirectiveLocation ENUM_VALUE);
+          (TypeSystemDirectiveLocation FIELD_DEFINITION)];
+        description = None }
+
+      ]
 
     |}]
   ;;
@@ -1449,7 +1629,25 @@ type ExampleType {
 }    |}
     in
     expect_document input;
-    [%expect {|
+    [%expect
+      {|
+      Document: [
+          (Object
+         { name = "ExampleType"; implements = [];
+           fields =
+           [{ name = "newField"; args = []; ty = (NamedType "String");
+              directives = []; description = None };
+             { name = "oldField"; args = []; ty = (NamedType "String");
+               directives =
+               [{ name = "deprecated";
+                  args = [{ name = "reason"; value = (String "Use `newField`.") }]
+                  }
+                 ];
+               description = None }
+             ];
+           description = None })
+
+      ]
 
     |}]
   ;;
