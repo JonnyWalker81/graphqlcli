@@ -94,6 +94,12 @@ let expect_peek_on parser =
       | _ -> false)
 ;;
 
+let expect_peek_name parser name =
+  expect_peek parser (function
+      | Token.Name "type" | Token.Type -> true
+      | _ -> false)
+;;
+
 let peek_is parser token = phys_equal parser.peek_token token
 
 let peek_token_is_name parser =
@@ -198,7 +204,18 @@ and parse_definition parser =
   | Token.Name "fragment" -> parse_fragment (next_token parser)
   | Token.Name "interface" -> parse_interface (next_token parser) description
   | Token.Name "directive" -> parse_directive_definition parser description
+  | Token.Name "extend" -> parse_type_system_extension parser description
   | _ -> failwith_parser_error parser "unexpected definition"
+
+and parse_type_system_extension parser description =
+  match parser.peek_token with
+  | Token.Name "type" | Token.Type -> parse_type_extension parser description
+  | _ -> failwith_parser_error parser "parse_type_system_extension: expected valid name"
+
+and parse_type_extension parser description =
+  match expect_peek_name parser "type" with
+  | parser, true -> failwith_parser_error parser "found type"
+  | _ -> failwith_parser_error parser "parse_type_extension"
 
 and parse_directive_definition parser description =
   let parser, ok = expect_peek_at parser in
@@ -421,13 +438,27 @@ and parse_mutation parser =
 
 and parse_input_type parser description =
   let* parser, name = parse_name parser in
+  let* parser, directives =
+    match peek_is parser Token.At with
+    | true ->
+      let* parser, directives =
+        match parse_directives (next_token parser) with
+        | Ok (parser, directives) when List.length directives > 0 ->
+          (* let parser = next_token parser in *)
+          Ok (parser, directives)
+        | _ -> Ok (parser, [])
+      in
+      Ok (parser, directives)
+    | false -> Ok (parser, [])
+  in
   let parser, ok = expect_peek_left_brace parser in
   match parser, ok with
   | parser, true ->
     let* parser, fields = parse_type_definition parser in
     Ok
       ( parser
-      , Definition.TypeDefinition (TypeDefinition.Input { name; fields; description }) )
+      , Definition.TypeDefinition
+          (TypeDefinition.Input { name; fields; directives; description }) )
   | _, false -> Error "expected left brace"
 
 and parse_enum parser description =
@@ -741,6 +772,11 @@ and parse_type_definition parser =
         let parser = next_token parser in
         let parser = next_token parser in
         let* parser, ty = parse_graphql_type parser in
+        let parser, default_value =
+          match peek_is parser Token.Equal with
+          | true -> parse_value_literal (next_token parser)
+          | false -> parser, None
+        in
         let* parser, directives =
           match parser.peek_token with
           | Token.At ->
@@ -749,11 +785,18 @@ and parse_type_definition parser =
             Ok (parser, directives)
           | _ -> Ok (parser, [])
         in
-        let field = Field.{ name; args; directives; ty; description } in
+        let field =
+          Field.{ name; args; directives; ty; default_value = None; description }
+        in
         parse_type_def' parser (field :: fields)
       | Token.Name _ ->
         let parser = next_token parser in
         let* parser, ty = parse_graphql_type parser in
+        let parser, default_value =
+          match peek_is parser Token.Equal with
+          | true -> parse_value_literal (next_token parser)
+          | false -> parser, None
+        in
         let* parser, directives =
           match parser.peek_token with
           | Token.At ->
@@ -762,7 +805,7 @@ and parse_type_definition parser =
             Ok (parser, directives)
           | _ -> Ok (parser, [])
         in
-        let field = Field.{ name; args; ty; directives; description } in
+        let field = Field.{ name; args; ty; directives; default_value; description } in
         parse_type_def' parser (field :: fields)
       | _ -> failwith "parse_type_definition: expected a name or a colon")
     | _ ->

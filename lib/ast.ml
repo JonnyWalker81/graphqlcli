@@ -138,6 +138,7 @@ module Field = struct
     ; args : ArgumentDefiniton.t list
     ; ty : GraphqlType.t
     ; directives : Directive.t list
+    ; default_value : Value.t option
     ; description : string option
     }
   [@@deriving show { with_path = false }, sexp]
@@ -203,6 +204,7 @@ module InputType = struct
   type t =
     { name : string
     ; fields : Field.t list
+    ; directives : Directive.t list
     ; description : string option
     }
   [@@deriving show { with_path = false }, sexp]
