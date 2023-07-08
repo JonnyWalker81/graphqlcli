@@ -96,7 +96,7 @@ let expect_peek_on parser =
 
 let expect_peek_name parser name =
   expect_peek parser (function
-      | Token.Name "type" | Token.Type -> true
+      | Token.Name n when String.compare n name = 0 -> true
       | _ -> false)
 ;;
 
@@ -206,12 +206,12 @@ and parse_definition parser =
     | parser, None -> parser, None
   in
   match parser.cur_token with
-  | Token.Type -> parse_type (next_token parser) description
-  | Token.Schema -> parse_schema parser description
-  | Token.Scalar -> parse_scalar (next_token parser) description
-  | Token.Union -> parse_union (next_token parser) description
-  | Token.Enum -> parse_enum (next_token parser) description
-  | Token.Input -> parse_input_type (next_token parser) description
+  | Token.Name "type" -> parse_type (next_token parser) description
+  | Token.Name "schema" -> parse_schema parser description
+  | Token.Name "scalar" -> parse_scalar (next_token parser) description
+  | Token.Name "union" -> parse_union (next_token parser) description
+  | Token.Name "enum" -> parse_enum (next_token parser) description
+  | Token.Name "input" -> parse_input_type (next_token parser) description
   | Token.Comment comment ->
     Ok (parser, Definition.TypeDefinition (TypeDefinition.Comment comment))
   | Token.Query | Token.Mutation
@@ -227,7 +227,109 @@ and parse_definition parser =
 and parse_type_system_extension parser description =
   match parser.peek_token with
   | Token.Name "type" | Token.Type -> parse_type_extension parser description
+  | Token.Name "interface" -> parse_interface_extension parser description
+  | Token.Name "union" -> parse_union_extension parser description
+  | Token.Name "scalar" -> parse_scalar_extension parser description
+  | Token.Name "enum" -> parse_enum_extension parser description
+  | Token.Name "input" -> parse_input_extension parser description
   | _ -> failwith_parser_error parser "parse_type_system_extension: expected valid name"
+
+and parse_input_extension parser description =
+  match expect_peek_name parser "input" with
+  | parser, true ->
+    let parser = next_token parser in
+    let* parser, name = parse_name parser in
+    let* parser, directives = parse_directives parser in
+    let parser, ok = expect_peek_left_brace parser in
+    (match parser, ok with
+    | parser, true ->
+      let* parser, fields = parse_type_definition parser in
+      Ok
+        ( parser
+        , Definition.TypeDefinition
+            (TypeDefinition.Input { name; fields; directives; description }) )
+    | _, false ->
+      Ok
+        ( parser
+        , Definition.TypeDefinition
+            (TypeDefinition.Input { name; fields = []; directives; description }) ))
+  | _ -> failwith_parser_error parser "parse_interface_extension"
+
+and parse_enum_extension parser description =
+  match expect_peek_name parser "enum" with
+  | parser, true ->
+    let parser = next_token parser in
+    let* parser, name = parse_name parser in
+    let* parser, directives = parse_directives parser in
+    let parser, ok = expect_peek_left_brace parser in
+    (match parser, ok with
+    | parser, true ->
+      let parser = next_token parser in
+      let* parser, values = parse_enum_values parser in
+      Ok
+        ( parser
+        , Definition.TypeDefinition
+            (TypeDefinition.Enum { name; values; directives; description }) )
+    | _ ->
+      Ok
+        ( parser
+        , Definition.TypeDefinition
+            (TypeDefinition.Enum { name; values = []; directives; description }) ))
+  | _ -> failwith_parser_error parser "parse_enum_extension"
+
+and parse_scalar_extension parser description =
+  match expect_peek_name parser "scalar" with
+  | parser, true ->
+    let parser = next_token parser in
+    let* parser, name = parse_name parser in
+    let* parser, directives = parse_directives parser in
+    Ok
+      ( parser
+      , Definition.TypeDefinition
+          (TypeDefinition.Scalar { name; directives; description }) )
+  | _ -> failwith_parser_error parser "parse_scalar_extension: expected scalar keyword"
+
+and parse_union_extension parser description =
+  match expect_peek_name parser "union" with
+  | parser, true ->
+    let parser = next_token parser in
+    let* parser, name = parse_name parser in
+    let* parser, directives = parse_directives parser in
+    let parser, ok = expect_peek_equal parser in
+    (match parser, ok with
+    | parser, true ->
+      let* parser, members = parse_union_members parser in
+      Ok
+        ( parser
+        , Definition.TypeDefinition
+            (TypeDefinition.Union { name; members; directives; description }) )
+    | _, false ->
+      Ok
+        ( parser
+        , Definition.TypeDefinition
+            (TypeDefinition.Union { name; members = []; directives; description }) ))
+  | _ -> failwith_parser_error parser "parse_interface_extension"
+
+and parse_interface_extension parser description =
+  match expect_peek_name parser "interface" with
+  | parser, true ->
+    let parser = next_token parser in
+    let* parser, name = parse_name parser in
+    let* parser, directives = parse_directives parser in
+    let parser, ok = expect_peek_left_brace parser in
+    (match parser, ok with
+    | parser, true ->
+      let* parser, fields = parse_type_definition parser in
+      Ok
+        ( parser
+        , Definition.TypeDefinition
+            (TypeDefinition.Interface { name; fields; directives; description }) )
+    | _, false ->
+      Ok
+        ( parser
+        , Definition.TypeDefinition
+            (TypeDefinition.Interface { name; fields = []; directives; description }) ))
+  | _ -> failwith_parser_error parser "parse_interface_extension"
 
 and parse_type_extension parser description =
   match expect_peek_name parser "type" with
@@ -244,7 +346,11 @@ and parse_type_extension parser description =
         ( parser
         , Definition.TypeDefinition
             (TypeDefinition.Object { name; implements; fields; description }) )
-    | _, false -> Error "expected left brace")
+    | _, false ->
+      Ok
+        ( parser
+        , Definition.TypeDefinition
+            (TypeDefinition.Object { name; implements; fields = []; description }) ))
   | _ -> failwith_parser_error parser "parse_type_extension"
 
 and parse_directive_definition parser description =
@@ -295,7 +401,11 @@ and parse_interface parser description =
       ( parser
       , Definition.TypeDefinition
           (TypeDefinition.Interface { name; fields; directives; description }) )
-  | _, false -> Error "parse_interface: expected left brace"
+  | _, false ->
+    Ok
+      ( parser
+      , Definition.TypeDefinition
+          (TypeDefinition.Interface { name; fields = []; directives; description }) )
 
 and parse_fragment parser =
   let* parser, name = parse_name parser in
@@ -462,83 +572,100 @@ and parse_input_type parser description =
       ( parser
       , Definition.TypeDefinition
           (TypeDefinition.Input { name; fields; directives; description }) )
-  | _, false -> Error "expected left brace"
+  | _, false ->
+    Ok
+      ( parser
+      , Definition.TypeDefinition
+          (TypeDefinition.Input { name; fields = []; directives; description }) )
 
 and parse_enum parser description =
   let* parser, name = parse_name parser in
   let* parser, directives = parse_directives parser in
   let parser, ok = expect_peek_left_brace parser in
   if not ok
-  then failwith "parse_enum: expected left brace"
-  else (
-    let parser = next_token parser in
-    let rec parse_enum_value parser vals =
-      let parser, enum_desc =
-        match parse_description parser with
-        | parser, Some d ->
-          let parser = next_token parser in
-          parser, Some d
-        | _ -> parser, None
-      in
-      match parser.cur_token with
-      | Token.RightBrace -> Ok (parser, List.rev vals)
-      | Token.Comment _ -> parse_enum_value (next_token parser) vals
-      | _ ->
-        let* parser, name = parse_name parser in
-        let* parser, directives = parse_directives parser in
-        let parser = next_token parser in
-        parse_enum_value
-          parser
-          (EnumMember.{ name; directives; description = enum_desc } :: vals)
-    in
-    let* parser, vals = parse_enum_value parser [] in
+  then
     Ok
       ( parser
       , Definition.TypeDefinition
-          (TypeDefinition.Enum EnumType.{ name; values = vals; directives; description })
-      ))
-
-and parse_union parser description =
-  let* parser, union_name = parse_name parser in
-  let* parser, directives = parse_directives parser in
-  let parser, ok = expect_peek_equal parser in
-  if not ok
-  then failwith_parser_error parser "parse_union: expected ="
+          (TypeDefinition.Enum EnumType.{ name; values = []; directives; description }) )
   else (
     let parser = next_token parser in
-    let parser, first_union_desc =
+    let* parser, values = parse_enum_values parser in
+    Ok
+      ( parser
+      , Definition.TypeDefinition
+          (TypeDefinition.Enum EnumType.{ name; values; directives; description }) ))
+
+and parse_enum_values parser =
+  let rec parse_enum_value parser vals =
+    let parser, enum_desc =
       match parse_description parser with
       | parser, Some d ->
         let parser = next_token parser in
         parser, Some d
       | _ -> parser, None
     in
-    let* parser, name = parse_name parser in
-    let rec parse_member parser members =
-      let parser, union_desc =
-        match parse_description parser with
-        | parser, Some d ->
-          let parser = next_token parser in
-          parser, Some d
-        | _ -> parser, None
-      in
-      match parser.peek_token with
-      | Token.Pipe ->
-        let parser = next_token parser in
-        let parser = next_token parser in
-        let* parser, name = parse_name parser in
-        parse_member parser (BaseValue.{ name; description = union_desc } :: members)
-      | Token.Comment _ -> parse_member (next_token parser) members
-      | _ -> Ok (parser, List.rev members)
-    in
-    let* parser, members =
-      parse_member parser [ BaseValue.{ name; description = first_union_desc } ]
-    in
+    match parser.cur_token with
+    | Token.RightBrace -> Ok (parser, List.rev vals)
+    | Token.Comment _ -> parse_enum_value (next_token parser) vals
+    | _ ->
+      let* parser, name = parse_name parser in
+      let* parser, directives = parse_directives parser in
+      let parser = next_token parser in
+      parse_enum_value
+        parser
+        (EnumMember.{ name; directives; description = enum_desc } :: vals)
+  in
+  parse_enum_value parser []
+
+and parse_union parser description =
+  let* parser, union_name = parse_name parser in
+  let* parser, directives = parse_directives parser in
+  let parser, ok = expect_peek_equal parser in
+  if not ok
+  then
+    Ok
+      ( parser
+      , Definition.TypeDefinition
+          (TypeDefinition.Union
+             { name = union_name; members = []; directives; description }) )
+  else
+    let* parser, members = parse_union_members parser in
     Ok
       ( parser
       , Definition.TypeDefinition
           (TypeDefinition.Union { name = union_name; members; directives; description })
-      ))
+      )
+
+and parse_union_members parser =
+  let parser = chomp parser Token.Pipe in
+  let parser = next_token parser in
+  let parser, first_union_desc =
+    match parse_description parser with
+    | parser, Some d ->
+      let parser = next_token parser in
+      parser, Some d
+    | _ -> parser, None
+  in
+  let* parser, name = parse_name parser in
+  let rec parse_members' parser members =
+    let parser, union_desc =
+      match parse_description parser with
+      | parser, Some d ->
+        let parser = next_token parser in
+        parser, Some d
+      | _ -> parser, None
+    in
+    match parser.peek_token with
+    | Token.Pipe ->
+      let parser = next_token parser in
+      let parser = next_token parser in
+      let* parser, name = parse_name parser in
+      parse_members' parser (BaseValue.{ name; description = union_desc } :: members)
+    | Token.Comment _ -> parse_members' (next_token parser) members
+    | _ -> Ok (parser, List.rev members)
+  in
+  parse_members' parser [ BaseValue.{ name; description = first_union_desc } ]
 
 and parse_description parser =
   match parser.cur_token with
@@ -671,7 +798,11 @@ and parse_type parser description =
       ( parser
       , Definition.TypeDefinition
           (TypeDefinition.Object { name; implements; fields; description }) )
-  | _, false -> Error "expected left brace"
+  | _, false ->
+    Ok
+      ( parser
+      , Definition.TypeDefinition
+          (TypeDefinition.Object { name; implements; fields = []; description }) )
 
 and parse_implements parser =
   match parser.peek_token with
@@ -846,6 +977,7 @@ and parse_value_literal parser =
     parse_object_values parser []
   | Token.True -> parser, Some (Value.Boolean true)
   | Token.False -> parser, Some (Value.Boolean false)
+  | Token.Null -> next_token parser, Some Value.Null
   | _ -> parser, None
 
 and parse_graphql_type parser =

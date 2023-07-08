@@ -64,7 +64,7 @@ let is_whitespace lexer =
 
 let is_digit ch =
   match ch with
-  | '0' .. '9' | '.' -> true
+  | '0' .. '9' | '.' | 'e' | 'E' -> true
   | _ -> false
 ;;
 
@@ -103,6 +103,12 @@ let peek_is lexer amount to_match =
     if Char.to_int peek_char = Char.to_int to_match then lexer, true else lexer, false)
 ;;
 
+let is_endline ch =
+  match ch with
+  | '\n' -> true
+  | _ -> false
+;;
+
 let read_multiline_string lexer =
   let rec loop lexer str =
     match lexer.ch with
@@ -117,6 +123,7 @@ let read_multiline_string lexer =
         read_char lexer, str)
       else failwith "expeted ending of block quote"
     | _ ->
+      let lexer = if is_endline lexer.ch then increment_line lexer else lexer in
       let str = str ^ Char.escaped lexer.ch in
       loop (read_char lexer) str
   in
@@ -173,7 +180,7 @@ let read_number lexer =
   let rec loop lexer kind str =
     match lexer.ch with
     | ch when not (is_digit ch) -> read_char lexer, kind, str
-    | '.' ->
+    | '.' | 'e' | 'E' ->
       let str = str ^ Char.escaped lexer.ch in
       loop (read_char lexer) Token.FloatKind str
     | _ ->
@@ -301,6 +308,7 @@ type Foo {
        directive @example on FIELD
         42
         123.45
+        1.23e4
 
 |}
     in
@@ -309,7 +317,7 @@ type Foo {
     Printf.printf "Line Numbers: %d" lexer.line;
     [%expect
       {|
-      Token.Schema
+      (Token.Name "schema")
       Token.LeftBrace
       (Token.Name "query")
       Token.Colon
@@ -318,14 +326,14 @@ type Foo {
       Token.Colon
       (Token.Name "MyMutationRootType")
       Token.RightBrace
-      Token.Type
+      (Token.Name "type")
       (Token.Name "MyQueryRootType")
       Token.LeftBrace
       (Token.Name "someField")
       Token.Colon
       (Token.Name "String")
       Token.RightBrace
-      Token.Type
+      (Token.Name "type")
       (Token.Name "MyMutationRootType")
       Token.LeftBrace
       (Token.Name "setSomeField")
@@ -337,16 +345,16 @@ type Foo {
       Token.Colon
       (Token.Name "String")
       Token.RightBrace
-      Token.Enum
+      (Token.Name "enum")
       (Token.Name "Language")
       Token.LeftBrace
       (Token.Name "EN")
       (Token.Name "FR")
       (Token.Name "CH")
       Token.RightBrace
-      Token.Scalar
+      (Token.Name "scalar")
       (Token.Name "Time")
-      Token.Input
+      (Token.Name "input")
       (Token.Name "Point2D")
       Token.LeftBrace
       (Token.Name "x")
@@ -359,13 +367,13 @@ type Foo {
       (Token.StringLiteral "this is a string")
       (Token.Comment "this is a comment")
       (Token.Comment "this is another comment")
-      Token.Union
+      (Token.Name "union")
       (Token.Name "Uni")
       Token.Equal
       (Token.Name "Foo")
       Token.Pipe
       (Token.Name "Bar")
-      Token.Type
+      (Token.Name "type")
       (Token.Name "Foo")
       Token.LeftBrace
       (Token.Name "bar")
@@ -392,7 +400,7 @@ type Foo {
       Token.Colon
       (Token.Name "String")
       (Token.StringLiteral "This is a multi\\n         line string in graphQL")
-      Token.Type
+      (Token.Name "type")
       (Token.Name "Foo")
       (Token.Name "implements")
       (Token.Name "Bar")
@@ -410,8 +418,9 @@ type Foo {
       (Token.Name "FIELD")
       Token.Number {kind = Token.IntegerKind; value = "42"}
       Token.Number {kind = Token.FloatKind; value = "123.45"}
+      Token.Number {kind = Token.FloatKind; value = "1.23e4"}
       Token.Eof
-      Line Numbers: 45
+      Line Numbers: 46
 |}]
   ;;
 end

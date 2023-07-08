@@ -41,6 +41,7 @@ type t =
   | Boolean of bool
   | True
   | False
+  | Null
   | Semicolon
   | Comment of string
   | ID
@@ -51,20 +52,21 @@ type t =
 let lookup_keyword name =
   match name with
   (* | "String" -> String *)
-  | "schema" -> Schema
+  (* | "schema" -> Schema *)
   (* | "query" -> Query *)
   (* | "mutation" -> Mutation *)
-  | "type" -> Type
-  | "scalar" -> Scalar
-  | "input" -> Input
+  (* | "type" -> Type *)
+  (* | "scalar" -> Scalar *)
+  (* | "input" -> Input *)
   (* | "Int" -> Integer *)
   (* | "Float" -> Float *)
   (* | "Boolean" -> Boolean *)
-  | "union" -> Union
-  | "enum" -> Enum
+  (* | "union" -> Union *)
+  (* | "enum" -> Enum *)
   (* | "ID" -> ID *)
   | "true" -> True
   | "false" -> False
+  | "null" -> Null
   | _ -> Name name
 ;;
 
