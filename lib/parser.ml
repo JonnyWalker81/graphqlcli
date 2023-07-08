@@ -758,9 +758,7 @@ and parse_schema_def parser description directives =
 
 and make_schema_op op =
   match op with
-  | Some (_, o) ->
-    (* let () = Printf.printf "%s -> %s\n" value ty in *)
-    Some BaseValue.{ name = o.name; description = o.description }
+  | Some (_, o) -> Some BaseValue.{ name = o.name; description = o.description }
   | None -> None
 
 and name_is a b = String.compare a b = 0

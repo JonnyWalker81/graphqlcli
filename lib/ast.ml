@@ -1,33 +1,3 @@
-open Core
-
-(* open Base *)
-(* open Sexplib.Std *)
-
-(* module Field = struct *)
-(*   type field_type = { name : string } *)
-(*   [@@deriving show { with_path = false }, sexp] *)
-(* end *)
-
-(* and non_null_type = *)
-(*   | NonNullNamedType of graphql_type *)
-(*   | NonNullListType of graphql_type list *)
-(* [@@deriving show { with_path = false }, sexp] *)
-
-(* module Values = struct *)
-(*   (\* type 'a t = (string, 'a, String.comparator_witness) Map.t *\) *)
-(*   type 'a t = (string, 'a) Hashtbl.t *)
-
-(*   let pp ppr values = Fmt.str "map" *)
-
-(*   (\* let pp pp_key pp_value ppf values = *\) *)
-(*   (\*   Hashtbl.iteri values ~f:(fun ~key ~data -> *\) *)
-(*   (\*       Format.fprintf ppf "@[<1>%a: %a@]@." pp_key key pp_value data) *\) *)
-(*   (\* ;; *\) *)
-(*   (\* let pp ppf values = *\) *)
-(*   (\*   Hashtbl.iteri values ~f:(fun ~key ~data -> *\) *)
-(*   (\*       Format.fprintf ppf "@[<1>%s: %s@]@." key data) *\) *)
-(* end *)
-
 module Value = struct
   type t =
     | String of string
@@ -39,17 +9,6 @@ module Value = struct
     | Object of (string * t) list
     | List of t list
   [@@deriving show { with_path = false }, sexp]
-
-  (* and string_map = (string, t, String.comparator_witness) Map.t *)
-  (* [@@deriving show { with_path = false }, sexp] *)
-
-  (* let to_string = function *)
-  (*   | String s -> Fmt.strf "%s" s *)
-  (*   | _ -> Fmt.str "" *)
-
-  (* let pp ppf values = *)
-  (*   Hashtbl.iter values ~f:(fun ~key ~data -> *)
-  (*       Format.fprintf ppf "@[<1>%s: %s@]@." key (to_string data)) *)
 end
 
 module GraphqlType = struct
@@ -144,9 +103,6 @@ module Field = struct
   [@@deriving show { with_path = false }, sexp]
 end
 
-(* type scalar_type = { name : string; description : string option } *)
-(* [@@deriving show { with_path = false }, sexp] *)
-
 module ObjectType = struct
   type t =
     { name : string
@@ -156,12 +112,6 @@ module ObjectType = struct
     }
   [@@deriving show { with_path = false }, sexp]
 end
-
-(* type union_member = { *)
-(*   name: string; *)
-(*   description: string option; *)
-(* } *)
-(* [@@deriving show { with_path = false }, sexp] *)
 
 module BaseValue = struct
   type t =
@@ -232,7 +182,6 @@ module ObjectFieldType = struct
   [@@deriving show { with_path = false }, sexp]
 end
 
-(* type operation_arg = { name : string; value : object_field_type } *)
 module OperationArg = struct
   type t =
     { name : string
@@ -272,12 +221,6 @@ module TypeDefinition = struct
   [@@deriving show { with_path = false }, sexp]
 end
 
-(* type variable_definition = { name : string; ty : graphql_type} *)
-(* [@@deriving show { with_path = false }, sexp] *)
-
-(* type operation_type = { name : string; description: string option } *)
-(* [@@deriving show { with_path = false }, sexp] *)
-
 module Schema = struct
   type t =
     { query : BaseValue.t option
@@ -310,11 +253,6 @@ module SelectionField = struct
     }
   [@@deriving show { with_path = false }, sexp]
 end
-
-(* and selection_set = { *)
-(*   set: selection_field list *)
-(* } *)
-(* [@@deriving show { with_path = false }, sexp] *)
 
 module OperationDefinition = struct
   type t =

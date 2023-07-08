@@ -15,9 +15,21 @@ type t =
 let init ast = { ast; types = Map.empty (module String) }
 
 let rec validate validator node =
+  let validator = build_map validator in
   match node with
   | Ast.Document d -> validate_document validator d
   | _ -> failwith "unexpected node"
+
+and build_map validator node =
+  match node with
+  | Ast.Document defs ->
+    let rec process_document validator defs =
+      match defs with
+      | [] -> Ok validator
+      | def :: rest -> process_document validator rest
+    in
+    process_document validator defs
+  | _ -> failwith "expected document"
 
 and validate_document validator doc =
   let rec validate_document' validator defs =
