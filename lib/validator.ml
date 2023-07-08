@@ -9,13 +9,23 @@ type 'a validator_map = (string, 'a, String.comparator_witness) Map.t
 
 type t =
   { ast : Ast.node
-  ; types : Definition.t validator_map
+  ; types : TypeDefinition.t validator_map
   }
 
 let init ast = { ast; types = Map.empty (module String) }
 
+let add_def validator def =
+  match def with
+  | TypeDefinition.Object o ->
+    let dup = Map.add ~key:o.name ~data:def validator.types in
+    (match dup with
+    | `Ok m -> { ast = validator.ast; types = m }
+    | `Duplicate -> failwith (Fmt.str "trying to insert duplicate entry: %s" o.name))
+  | _ -> validator
+;;
+
 let rec validate validator node =
-  let validator = build_map validator in
+  let validator = build_map validator node in
   match node with
   | Ast.Document d -> validate_document validator d
   | _ -> failwith "unexpected node"
@@ -25,8 +35,13 @@ and build_map validator node =
   | Ast.Document defs ->
     let rec process_document validator defs =
       match defs with
-      | [] -> Ok validator
-      | def :: rest -> process_document validator rest
+      | [] -> validator
+      | def :: rest ->
+        (match def with
+        | Definition.TypeDefinition def ->
+          let validator = add_def validator def in
+          process_document validator rest
+        | _ -> validator)
     in
     process_document validator defs
   | _ -> failwith "expected document"
@@ -48,7 +63,11 @@ and validate_def validator def =
 
 and validate_type_def validator td = Ok validator
 
-let print_validator validator = Fmt.pr "test"
+let print_validator validator =
+  Map.iteri
+    ~f:(fun ~key ~data -> Fmt.pr "%s -> %s@." key (TypeDefinition.show data))
+    validator.types
+;;
 
 module Test = struct
   let valiate_document input =
@@ -74,6 +93,10 @@ module Test = struct
 
       type Baz {
       qux: Foo!
+}
+
+      type Foo {
+        baz: Int
 }
 |}
     in
