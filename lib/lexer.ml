@@ -64,7 +64,7 @@ let is_whitespace lexer =
 
 let is_digit ch =
   match ch with
-  | '0' .. '9' -> true
+  | '0' .. '9' | '.' -> true
   | _ -> false
 ;;
 
@@ -170,8 +170,18 @@ let read_ellipsis lexer =
 ;;
 
 let read_number lexer =
-  let lexer, number = read_while is_digit lexer "" in
-  lexer, Token.IntegerKind, number
+  let rec loop lexer kind str =
+    match lexer.ch with
+    | ch when not (is_digit ch) -> read_char lexer, kind, str
+    | '.' ->
+      let str = str ^ Char.escaped lexer.ch in
+      loop (read_char lexer) Token.FloatKind str
+    | _ ->
+      let str = str ^ Char.escaped lexer.ch in
+      loop (read_char lexer) kind str
+  in
+  let lexer, kind, number = loop lexer Token.IntegerKind "" in
+  lexer, kind, number
 ;;
 
 let next_token lexer =
@@ -290,6 +300,7 @@ type Foo {
 
        directive @example on FIELD
         42
+        123.45
 
 |}
     in
@@ -398,6 +409,7 @@ type Foo {
       (Token.Name "on")
       (Token.Name "FIELD")
       Token.Number {kind = Token.IntegerKind; value = "42"}
+      Token.Number {kind = Token.FloatKind; value = "123.45"}
       Token.Eof
       Line Numbers: 45
 |}]

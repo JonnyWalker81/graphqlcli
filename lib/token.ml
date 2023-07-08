@@ -39,6 +39,8 @@ type t =
       ; value : string
       }
   | Boolean of bool
+  | True
+  | False
   | Semicolon
   | Comment of string
   | ID
@@ -61,6 +63,8 @@ let lookup_keyword name =
   | "union" -> Union
   | "enum" -> Enum
   (* | "ID" -> ID *)
+  | "true" -> True
+  | "false" -> False
   | _ -> Name name
 ;;
 
