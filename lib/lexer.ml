@@ -179,7 +179,7 @@ let read_ellipsis lexer =
 let read_number lexer =
   let rec loop lexer kind str =
     match lexer.ch with
-    | ch when not (is_digit ch) -> read_char lexer, kind, str
+    | ch when not (is_digit ch) -> lexer, kind, str
     | '.' | 'e' | 'E' ->
       let str = str ^ Char.escaped lexer.ch in
       loop (read_char lexer) Token.FloatKind str
@@ -420,7 +420,7 @@ type Foo {
       Token.Number {kind = Token.FloatKind; value = "123.45"}
       Token.Number {kind = Token.FloatKind; value = "1.23e4"}
       Token.Eof
-      Line Numbers: 46
+      Line Numbers: 48
 |}]
   ;;
 end
