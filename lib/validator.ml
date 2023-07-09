@@ -127,8 +127,7 @@ and validate_schema_type validator typ seen =
       | Some _ -> Ok validator
       | None -> Error (Parse_error.TypeNotFound s.name)
     in
-    let seen = Map.add ~key:s.name ~data:s.name seen in
-    (match seen with
+    (match Map.add ~key:s.name ~data:s.name seen with
     | `Ok m ->
       let seen = m in
       Ok (validator, seen)
