@@ -1,3 +1,5 @@
+open Base
+
 module Value = struct
   type t =
     | String of string

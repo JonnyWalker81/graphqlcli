@@ -121,7 +121,9 @@ let read_multiline_string lexer =
         let lexer = read_char lexer in
         let lexer = read_char lexer in
         read_char lexer, str)
-      else failwith "expeted ending of block quote"
+      else (
+        let str = str ^ Char.escaped lexer.ch in
+        loop (read_char lexer) str)
     | _ ->
       let lexer = if is_endline lexer.ch then increment_line lexer else lexer in
       let str = str ^ Char.escaped lexer.ch in

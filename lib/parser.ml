@@ -973,8 +973,8 @@ and parse_value_literal parser =
         failwith_parser_error parser "parse_value_literal: expected right brace or name"
     in
     parse_object_values parser []
-  | Token.True -> parser, Some (Value.Boolean true)
-  | Token.False -> parser, Some (Value.Boolean false)
+  | Token.True -> next_token parser, Some (Value.Boolean true)
+  | Token.False -> next_token parser, Some (Value.Boolean false)
   | Token.Null -> next_token parser, Some Value.Null
   | _ -> parser, None
 
