@@ -4,6 +4,7 @@ open Ast
 open Base
 
 let ( let* ) res f = Base.Result.bind res ~f
+let ( let+ ) res f = Base.Option.bind res ~f
 
 type 'a validator_map = (string, 'a, String.comparator_witness) Map.t
 
@@ -22,9 +23,39 @@ let init ast =
   }
 ;;
 
+let pp_validator_map m f =
+  Map.iteri ~f:(fun ~key ~data -> Fmt.pr "%s -> %s@." key (f data)) m
+;;
+
+let pp_validator_schema validator =
+  match validator.schema with
+  | Some s -> Fmt.pr "%s@." (Schema.show s)
+  | _ -> Fmt.pr "schema = None\n"
+;;
+
+let print_validator validator =
+  pp_validator_schema validator;
+  pp_validator_map validator.types TypeDefinition.show;
+  pp_validator_map validator.directives DirectiveDefinition.show
+;;
+
+
+
+let is_valid_name name =
+  match String.to_list name with
+  | '_' :: '_' :: _ -> false
+  | _ -> true
+;;
+
+let is_input_type typ =
+  match typ with
+  | TypeDefinition.Enum _ | TypeDefinition.Scalar _ | TypeDefinition.Input _ -> true
+  | _ -> false
+;;
+
 let add_type_def validator def =
   match def with
-  | TypeDefinition.Object o ->
+  | TypeDefinition.Object o ->(
     let dup = Map.add ~key:o.name ~data:def validator.types in
     (match dup with
     | `Ok m ->
@@ -34,7 +65,20 @@ let add_type_def validator def =
         ; types = m
         ; directives = validator.directives
         }
-    | `Duplicate -> Error (Parse_error.DuplicateType o.name))
+    | `Duplicate -> Error (Parse_error.DuplicateType o.name)))
+  | TypeDefinition.Scalar s -> (
+let dup = Map.add ~key:s.name ~data:def validator.types in
+    (match dup with
+    | `Ok m ->
+      Ok
+        { ast = validator.ast
+        ; schema = validator.schema
+        ; types = m
+        ; directives = validator.directives
+        }
+    | `Duplicate -> Error (Parse_error.DuplicateType s.name))
+
+  )
   | _ -> Ok validator
 ;;
 
@@ -133,30 +177,36 @@ and validate_schema_type validator typ seen =
       Ok (validator, seen)
     | `Duplicate -> Error (Parse_error.SchemaTypesMustBeDifferent s.name))
 
-and validate_directive validator directive = Ok validator
+and validate_directive validator directive =
+  let* validator = validate_name validator directive.name in
+  let* validator = validate_args validator directive.args directive.name in
+  Ok validator
+
+and validate_args validator args current_directive_name =
+  match
+    List.find args ~f:(fun a ->
+        let typ = Map.find validator.types (GraphqlType.name a.ty) in
+        match typ with
+        | None -> true
+        | Some typ ->  (not (is_input_type typ)))
+  with
+  | Some a ->
+    Error (Parse_error.DirectiveArgMustBeInputType (current_directive_name, a.name))
+  | None -> Ok validator
+
+and validate_name validator name =
+  match is_valid_name name with
+  | false -> Error (Parse_error.NameShouldNotStartWithUnderscores name)
+  | _ -> Ok validator
+
 and validate_type_def validator td = Ok validator
 
-let pp_validator_map m f =
-  Map.iteri ~f:(fun ~key ~data -> Fmt.pr "%s -> %s@." key (f data)) m
-;;
-
-let pp_validator_schema validator =
-  match validator.schema with
-  | Some s -> Fmt.pr "%s@." (Schema.show s)
-  | _ -> Fmt.pr "schema = None\n"
-;;
-
-let print_validator validator =
-  pp_validator_schema validator;
-  pp_validator_map validator.types TypeDefinition.show;
-  pp_validator_map validator.directives DirectiveDefinition.show
-;;
-
 module Test = struct
+    open Core
   let valiate_document input =
-    let lexer = Lexer.init input in
-    let parser = Parser.init lexer in
-    let program = Parser.parse parser in
+      let prelude = In_channel.read_all "../../../prelude.graphql" in
+      let program = Parser.parse_documents [prelude ; input] in
+    (* match Ok(Ast.Document program) with *)
     match program with
     | Ok program ->
       let validator = init program in
@@ -172,7 +222,8 @@ module Test = struct
       {|
 
     "directive desc"
-directive @example on FIELD_DEFINITION
+directive @example(arg: String) on FIELD_DEFINITION
+
 
         schema {
         query: Query

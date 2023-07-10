@@ -19,6 +19,13 @@ module GraphqlType = struct
     | ListType of t
     | NonNullType of t
   [@@deriving show { with_path = false }, sexp]
+
+  let rec name t =
+    match t with
+    | NamedType s ->  let () = Fmt.pr "ty name: %s\n" s in s
+    | ListType ty -> name ty
+    | NonNullType ty -> name ty
+  ;;
 end
 
 module DirectiveArg = struct

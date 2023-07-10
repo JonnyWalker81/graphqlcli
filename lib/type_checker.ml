@@ -29,7 +29,7 @@ module Test = struct
     let lexer = Lexer.init input in
     let parser = Parser.init lexer in
     let program = Parser.parse parser in
-    match program with
+    match Ok (Ast.Document program) with
     | Ok program -> type_check program
     | Error msg -> Fmt.failwith "error...%s" msg
   ;;

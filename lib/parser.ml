@@ -188,16 +188,16 @@ let failwith_parser_error parser msg =
 ;;
 
 let rec parse parser =
-  let rec parse' parser definitions =
-    match parser.cur_token with
-    | Token.Eof -> parser, List.rev definitions
-    | _ ->
-      (match parse_definition parser with
-      | Ok (parser, s) -> parse' (next_token parser) (s :: definitions)
-      | Error err -> failwith_parser_error parser err)
-  in
-  let _, definitions = parse' parser [] in
-  Ok (Ast.Document definitions)
+  let _, definitions = parse_ parser [] in
+  definitions
+
+and parse_ parser definitions =
+  match parser.cur_token with
+  | Token.Eof -> parser, List.rev definitions
+  | _ ->
+    (match parse_definition parser with
+    | Ok (parser, s) -> parse_ (next_token parser) (s :: definitions)
+    | Error err -> failwith_parser_error parser err)
 
 and parse_definition parser =
   let parser, description =
@@ -1021,9 +1021,27 @@ and parse_name parser =
 let parse_document input =
   let lexer = Lexer.init input in
   let parser = init lexer in
-  let document = parse parser in
-  document
+  let definitions = parse parser in
+  Ok (Ast.Document definitions)
 ;;
+
+let parse_documents docs =
+  let rec parse_many' docs definitions =
+    match docs with
+    | [] -> List.rev definitions
+    | doc :: rest ->
+      let lexer = Lexer.init doc in
+      let parser = init lexer in
+      let defs = parse parser in
+      parse_many' rest (List.append defs definitions)
+  in
+  let definitions = parse_many' docs [] in
+  Ok (Ast.Document definitions)
+;;
+
+(* let parse_documents docs = *)
+(*   let document = List.fold_left  docs *)
+(*   Fmt.failwith "parse list of documents" *)
 
 let string_of_definition = function
   | Definition.TypeDefinition def -> Fmt.str "  %s@." (TypeDefinition.show def)
@@ -1045,10 +1063,13 @@ module Test = struct
     let lexer = Lexer.init input in
     let parser = init lexer in
     let program = parse parser in
-    match program with
+    print_node (Ast.Document program)
+  ;;
+
+  (* match program with
     | Ok program -> print_node program
     | Error msg -> Fmt.failwith "error...%s" msg
-  ;;
+    *)
 
   (* | Error msg -> Fmt.failwith "%a@." pp_parse_error msg *)
 

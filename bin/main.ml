@@ -2,8 +2,15 @@ open Core
 open Graphqlcli
 
 let parse file =
-  let contents = In_channel.read_all file in
-  let document = Parser.parse_document contents in
+  let files =
+    match Sys.is_directory file with
+    | `Yes -> Sys.ls_dir file
+    | _ -> [ file ]
+  in
+  (* let contents = In_channel.read_all file in *)
+  (* let document = Parser.parse_document contents in *)
+  let docs = List.map files ~f:(fun input -> In_channel.read_all input) in
+  let document = Parser.parse_documents docs in
   match document with
   | Ok _ -> Printf.printf "parsed document\n"
   | Error e -> Printf.printf "Error parsing document: %s" e
