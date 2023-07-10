@@ -1,19 +1,26 @@
 open Core
 open Graphqlcli
 
+let ( let* ) res f = Base.Result.bind res ~f
+
 let parse file =
   let files =
     match Sys.is_directory file with
     | `Yes -> Sys.ls_dir file
-    | _ -> [ file ]
+    | _ -> [ "./prelude.graphql"; file ]
   in
-  (* let contents = In_channel.read_all file in *)
-  (* let document = Parser.parse_document contents in *)
   let docs = List.map files ~f:(fun input -> In_channel.read_all input) in
+  let () = Fmt.pr "Parsing schema: %s\n" file in
   let document = Parser.parse_documents docs in
   match document with
-  | Ok _ -> Printf.printf "parsed document\n"
-  | Error e -> Printf.printf "Error parsing document: %s" e
+  | Ok document ->
+    let () = Fmt.pr "Validating schema: %s\n" file in
+    let validator = Validator.init document in
+    let validator = Validator.validate validator document in
+    (match validator with
+    | Ok _ -> Fmt.pr "Vaidated schema: %s\n" file
+    | Error msg -> Fmt.pr "Validation Error: %s" (Parse_error.show msg))
+  | Error e -> Fmt.pr "Error parsing schema: %s" e
 ;;
 
 let command =

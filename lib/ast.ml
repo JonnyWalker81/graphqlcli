@@ -22,7 +22,7 @@ module GraphqlType = struct
 
   let rec name t =
     match t with
-    | NamedType s ->  let () = Fmt.pr "ty name: %s\n" s in s
+    | NamedType s -> s
     | ListType ty -> name ty
     | NonNullType ty -> name ty
   ;;
