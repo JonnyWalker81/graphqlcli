@@ -5,6 +5,9 @@ type t =
   | SchemaTypesMustBeDifferent of string
   | NameShouldNotStartWithUnderscores of string
   | DirectiveArgMustBeInputType of (string * string)
+  | DirectiveMustNotReferenceItself of string
+  | InvalidFieldName of (string * string)
+  | FieldArgMustBeInputType of (string * string)
 
 let show = function
   | DuplicateType s -> Fmt.str "Duplicate type found: %s" s
@@ -18,4 +21,10 @@ let show = function
       s
   | DirectiveArgMustBeInputType (dir, typ) ->
     Fmt.str "Directive, '%s', with arg '%s', must be input type." dir typ
+  | DirectiveMustNotReferenceItself name ->
+    Fmt.str "Directive arg, '%s', should not use its own directive." name
+  | InvalidFieldName (a, f) ->
+    Fmt.str "Invalid Field Name, '%s', for type '%s', cannot start with undersores." a f
+  | FieldArgMustBeInputType (dir, typ) ->
+    Fmt.str "Field, '%s', with arg '%s', must be input type." dir typ
 ;;

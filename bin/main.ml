@@ -9,7 +9,13 @@ let parse file =
     | `Yes -> Sys.ls_dir file
     | _ -> [ "./prelude.graphql"; file ]
   in
-  let docs = List.map files ~f:(fun input -> In_channel.read_all input) in
+  let docs =
+    List.map files ~f:(fun input ->
+        let contents = In_channel.read_all input in
+        match input with
+        | "./prelude.graphql" -> true, contents
+        | _ -> false, contents)
+  in
   let () = Fmt.pr "Parsing schema: %s\n" file in
   let document = Parser.parse_documents docs in
   match document with
@@ -19,8 +25,8 @@ let parse file =
     let validator = Validator.validate validator document in
     (match validator with
     | Ok _ -> Fmt.pr "Vaidated schema: %s\n" file
-    | Error msg -> Fmt.pr "Validation Error: %s" (Parse_error.show msg))
-  | Error e -> Fmt.pr "Error parsing schema: %s" e
+    | Error msg -> Fmt.pr "Validation Error: %s\n" (Parse_error.show msg))
+  | Error e -> Fmt.pr "Error parsing schema: %s\n" e
 ;;
 
 let command =

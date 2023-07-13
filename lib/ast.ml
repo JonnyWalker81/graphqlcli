@@ -96,6 +96,7 @@ module DirectiveDefinition = struct
     ; args : ArgumentDefiniton.t list
     ; locations : DirectiveLocation.t list
     ; description : string option
+    ; builtin : bool
     }
   [@@deriving show { with_path = false }, sexp]
 end
@@ -118,6 +119,7 @@ module ObjectType = struct
     ; implements : string list
     ; fields : Field.t list
     ; description : string option
+    ; builtin : bool
     }
   [@@deriving show { with_path = false }, sexp]
 end
@@ -136,6 +138,7 @@ module UnionType = struct
     ; members : BaseValue.t list
     ; directives : Directive.t list
     ; description : string option
+    ; builtin : bool
     }
   [@@deriving show { with_path = false }, sexp]
 end
@@ -155,6 +158,7 @@ module EnumType = struct
     ; values : EnumMember.t list
     ; directives : Directive.t list
     ; description : string option
+    ; builtin : bool
     }
   [@@deriving show { with_path = false }, sexp]
 end
@@ -165,6 +169,7 @@ module InputType = struct
     ; fields : Field.t list
     ; directives : Directive.t list
     ; description : string option
+    ; builtin : bool
     }
   [@@deriving show { with_path = false }, sexp]
 end
@@ -205,6 +210,7 @@ module InterfaceType = struct
     ; fields : Field.t list
     ; directives : Directive.t list
     ; description : string option
+    ; builtin : bool
     }
   [@@deriving show { with_path = false }, sexp]
 end
@@ -214,6 +220,7 @@ module ScalarType = struct
     { name : string
     ; directives : Directive.t list
     ; description : string option
+    ; builtin : bool
     }
   [@@deriving show { with_path = false }, sexp]
 end
@@ -228,6 +235,33 @@ module TypeDefinition = struct
     | Input of InputType.t
     | Comment of string
   [@@deriving show { with_path = false }, sexp]
+
+  let is_builtin = function
+    | Scalar s -> s.builtin
+    | Object o -> o.builtin
+    | Interface i -> i.builtin
+    | Union u -> u.builtin
+    | Enum e -> e.builtin
+    | Input i -> i.builtin
+    | _ -> false
+  ;;
+
+  let name = function
+    | Scalar s -> s.name
+    | Object o -> o.name
+    | Interface i -> i.name
+    | Union u -> u.name
+    | Enum e -> e.name
+    | Input i -> i.name
+    | _ -> ""
+  ;;
+
+  let fields = function
+    | Object o -> o.fields
+    | Interface i -> i.fields
+    | Input i -> i.fields
+    | _ -> []
+  ;;
 end
 
 module Schema = struct

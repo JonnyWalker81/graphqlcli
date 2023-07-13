@@ -209,8 +209,8 @@ and parse_definition parser =
   | Token.Name "type" -> parse_type (next_token parser) description
   | Token.Name "schema" -> parse_schema parser description
   | Token.Name "scalar" -> parse_scalar (next_token parser) description
-  | Token.Name "union" -> parse_union (next_token parser) description
   | Token.Name "enum" -> parse_enum (next_token parser) description
+  | Token.Name "union" -> parse_union (next_token parser) description
   | Token.Name "input" -> parse_input_type (next_token parser) description
   | Token.Comment comment ->
     Ok (parser, Definition.TypeDefinition (TypeDefinition.Comment comment))
@@ -247,12 +247,14 @@ and parse_input_extension parser description =
       Ok
         ( parser
         , Definition.TypeDefinition
-            (TypeDefinition.Input { name; fields; directives; description }) )
+            (TypeDefinition.Input
+               { name; fields; directives; description; builtin = false }) )
     | _, false ->
       Ok
         ( parser
         , Definition.TypeDefinition
-            (TypeDefinition.Input { name; fields = []; directives; description }) ))
+            (TypeDefinition.Input
+               { name; fields = []; directives; description; builtin = false }) ))
   | _ -> failwith_parser_error parser "parse_interface_extension"
 
 and parse_enum_extension parser description =
@@ -269,12 +271,14 @@ and parse_enum_extension parser description =
       Ok
         ( parser
         , Definition.TypeDefinition
-            (TypeDefinition.Enum { name; values; directives; description }) )
+            (TypeDefinition.Enum
+               { name; values; directives; description; builtin = false }) )
     | _ ->
       Ok
         ( parser
         , Definition.TypeDefinition
-            (TypeDefinition.Enum { name; values = []; directives; description }) ))
+            (TypeDefinition.Enum
+               { name; values = []; directives; description; builtin = false }) ))
   | _ -> failwith_parser_error parser "parse_enum_extension"
 
 and parse_scalar_extension parser description =
@@ -286,7 +290,7 @@ and parse_scalar_extension parser description =
     Ok
       ( parser
       , Definition.TypeDefinition
-          (TypeDefinition.Scalar { name; directives; description }) )
+          (TypeDefinition.Scalar { name; directives; description; builtin = false }) )
   | _ -> failwith_parser_error parser "parse_scalar_extension: expected scalar keyword"
 
 and parse_union_extension parser description =
@@ -302,12 +306,14 @@ and parse_union_extension parser description =
       Ok
         ( parser
         , Definition.TypeDefinition
-            (TypeDefinition.Union { name; members; directives; description }) )
+            (TypeDefinition.Union
+               { name; members; directives; description; builtin = false }) )
     | _, false ->
       Ok
         ( parser
         , Definition.TypeDefinition
-            (TypeDefinition.Union { name; members = []; directives; description }) ))
+            (TypeDefinition.Union
+               { name; members = []; directives; description; builtin = false }) ))
   | _ -> failwith_parser_error parser "parse_interface_extension"
 
 and parse_interface_extension parser description =
@@ -323,12 +329,14 @@ and parse_interface_extension parser description =
       Ok
         ( parser
         , Definition.TypeDefinition
-            (TypeDefinition.Interface { name; fields; directives; description }) )
+            (TypeDefinition.Interface
+               { name; fields; directives; description; builtin = false }) )
     | _, false ->
       Ok
         ( parser
         , Definition.TypeDefinition
-            (TypeDefinition.Interface { name; fields = []; directives; description }) ))
+            (TypeDefinition.Interface
+               { name; fields = []; directives; description; builtin = false }) ))
   | _ -> failwith_parser_error parser "parse_interface_extension"
 
 and parse_type_extension parser description =
@@ -345,12 +353,14 @@ and parse_type_extension parser description =
       Ok
         ( parser
         , Definition.TypeDefinition
-            (TypeDefinition.Object { name; implements; fields; description }) )
+            (TypeDefinition.Object
+               { name; implements; fields; description; builtin = false }) )
     | _, false ->
       Ok
         ( parser
         , Definition.TypeDefinition
-            (TypeDefinition.Object { name; implements; fields = []; description }) ))
+            (TypeDefinition.Object
+               { name; implements; fields = []; description; builtin = false }) ))
   | _ -> failwith_parser_error parser "parse_type_extension"
 
 and parse_directive_definition parser description =
@@ -384,7 +394,8 @@ and parse_directive_definition parser description =
           Ok
             ( parser
             , Definition.Directive
-                DirectiveDefinition.{ name; args; locations; description } )
+                DirectiveDefinition.
+                  { name; args; locations; description; builtin = false } )
       in
       parse_locations (next_token parser) [ name_to_directive_location parser.peek_token ]
     | false -> failwith_parser_error parser "parse_directive: expected 'on'")
@@ -400,12 +411,14 @@ and parse_interface parser description =
     Ok
       ( parser
       , Definition.TypeDefinition
-          (TypeDefinition.Interface { name; fields; directives; description }) )
+          (TypeDefinition.Interface
+             { name; fields; directives; description; builtin = false }) )
   | _, false ->
     Ok
       ( parser
       , Definition.TypeDefinition
-          (TypeDefinition.Interface { name; fields = []; directives; description }) )
+          (TypeDefinition.Interface
+             { name; fields = []; directives; description; builtin = false }) )
 
 and parse_fragment parser =
   let* parser, name = parse_name parser in
@@ -571,12 +584,14 @@ and parse_input_type parser description =
     Ok
       ( parser
       , Definition.TypeDefinition
-          (TypeDefinition.Input { name; fields; directives; description }) )
+          (TypeDefinition.Input { name; fields; directives; description; builtin = false })
+      )
   | _, false ->
     Ok
       ( parser
       , Definition.TypeDefinition
-          (TypeDefinition.Input { name; fields = []; directives; description }) )
+          (TypeDefinition.Input
+             { name; fields = []; directives; description; builtin = false }) )
 
 and parse_enum parser description =
   let* parser, name = parse_name parser in
@@ -587,14 +602,16 @@ and parse_enum parser description =
     Ok
       ( parser
       , Definition.TypeDefinition
-          (TypeDefinition.Enum EnumType.{ name; values = []; directives; description }) )
+          (TypeDefinition.Enum
+             EnumType.{ name; values = []; directives; description; builtin = false }) )
   else (
     let parser = next_token parser in
     let* parser, values = parse_enum_values parser in
     Ok
       ( parser
       , Definition.TypeDefinition
-          (TypeDefinition.Enum EnumType.{ name; values; directives; description }) ))
+          (TypeDefinition.Enum
+             EnumType.{ name; values; directives; description; builtin = false }) ))
 
 and parse_enum_values parser =
   let rec parse_enum_value parser vals =
@@ -628,14 +645,15 @@ and parse_union parser description =
       ( parser
       , Definition.TypeDefinition
           (TypeDefinition.Union
-             { name = union_name; members = []; directives; description }) )
+             { name = union_name; members = []; directives; description; builtin = false })
+      )
   else
     let* parser, members = parse_union_members parser in
     Ok
       ( parser
       , Definition.TypeDefinition
-          (TypeDefinition.Union { name = union_name; members; directives; description })
-      )
+          (TypeDefinition.Union
+             { name = union_name; members; directives; description; builtin = false }) )
 
 and parse_union_members parser =
   let parser = chomp parser Token.Pipe in
@@ -716,8 +734,8 @@ and parse_scalar parser description =
   let* parser, directives = parse_directives parser in
   Ok
     ( parser
-    , Definition.TypeDefinition (TypeDefinition.Scalar { name; directives; description })
-    )
+    , Definition.TypeDefinition
+        (TypeDefinition.Scalar { name; directives; description; builtin = false }) )
 
 and parse_schema parser description =
   let* parser, directives = parse_directives parser in
@@ -795,12 +813,14 @@ and parse_type parser description =
     Ok
       ( parser
       , Definition.TypeDefinition
-          (TypeDefinition.Object { name; implements; fields; description }) )
+          (TypeDefinition.Object
+             { name; implements; fields; description; builtin = false }) )
   | _, false ->
     Ok
       ( parser
       , Definition.TypeDefinition
-          (TypeDefinition.Object { name; implements; fields = []; description }) )
+          (TypeDefinition.Object
+             { name; implements; fields = []; description; builtin = false }) )
 
 and parse_implements parser =
   match parser.peek_token with
@@ -1018,6 +1038,88 @@ and parse_name parser =
          (Token.show parser.peek_token))
 ;;
 
+let mark_type_as_builtin def =
+  match def with
+  | TypeDefinition.Scalar s ->
+    TypeDefinition.Scalar
+      { name = s.name
+      ; directives = s.directives
+      ; description = s.description
+      ; builtin = true
+      }
+  | TypeDefinition.Object o ->
+    TypeDefinition.Object
+      { name = o.name
+      ; implements = o.implements
+      ; fields = o.fields
+      ; description = o.description
+      ; builtin = true
+      }
+  | TypeDefinition.Interface i ->
+    TypeDefinition.Interface
+      { name = i.name
+      ; fields = i.fields
+      ; directives = i.directives
+      ; description = i.description
+      ; builtin = true
+      }
+  | TypeDefinition.Union u ->
+    TypeDefinition.Union
+      { name = u.name
+      ; members = u.members
+      ; directives = u.directives
+      ; description = u.description
+      ; builtin = true
+      }
+  | TypeDefinition.Enum e ->
+    TypeDefinition.Enum
+      { name = e.name
+      ; values = e.values
+      ; directives = e.directives
+      ; description = e.description
+      ; builtin = true
+      }
+  | TypeDefinition.Input i ->
+    TypeDefinition.Input
+      { name = i.name
+      ; fields = i.fields
+      ; directives = i.directives
+      ; description = i.description
+      ; builtin = true
+      }
+  | _ -> def
+;;
+
+let mark_directive_as_builtin dir =
+  DirectiveDefinition.
+    { name = dir.name
+    ; args = dir.args
+    ; locations = dir.locations
+    ; description = dir.description
+    ; builtin = true
+    }
+;;
+
+let mark_builtin defs doc =
+  let rec mark' defs marked =
+    match defs with
+    | [] -> List.rev marked
+    | def :: rest ->
+      let def =
+        match doc with
+        | true, doc ->
+          (match def with
+          | Definition.TypeDefinition td ->
+            Definition.TypeDefinition (mark_type_as_builtin td)
+          | Definition.Directive d -> Definition.Directive (mark_directive_as_builtin d)
+          | _ -> def)
+        | false, _ -> def
+      in
+      mark' rest (def :: marked)
+  in
+  mark' defs []
+;;
+
 let parse_document input =
   let lexer = Lexer.init input in
   let parser = init lexer in
@@ -1030,9 +1132,11 @@ let parse_documents docs =
     match docs with
     | [] -> List.rev definitions
     | doc :: rest ->
-      let lexer = Lexer.init doc in
+      let _, input = doc in
+      let lexer = Lexer.init input in
       let parser = init lexer in
       let defs = parse parser in
+      let defs = mark_builtin defs doc in
       parse_many' rest (List.append defs definitions)
   in
   let definitions = parse_many' docs [] in
