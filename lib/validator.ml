@@ -48,13 +48,10 @@ let is_valid_name name =
 let is_input_type typ =
   match typ with
   | TypeDefinition.Enum _ | TypeDefinition.Scalar _ | TypeDefinition.Input _ -> true
-  | _ ->
-    let () = Fmt.pr "%s@.\n" (TypeDefinition.show typ) in
-    false
+  | _ -> false
 ;;
 
-let is_output_type typ =
-  match typ with
+let is_output_type = function
   | TypeDefinition.Enum _
   | TypeDefinition.Scalar _
   | TypeDefinition.Object _
@@ -64,8 +61,7 @@ let is_output_type typ =
 ;;
 
 let update_types_map validator key data =
-  let dup = Map.add ~key ~data validator.types in
-  match dup with
+  match Map.add ~key ~data validator.types with
   | `Ok m ->
     Ok
       { ast = validator.ast
@@ -88,10 +84,9 @@ let add_type_def validator def =
 ;;
 
 let add_directive validator directive =
-  let dup =
+  match
     Map.add ~key:directive.DirectiveDefinition.name ~data:directive validator.directives
-  in
-  match dup with
+  with
   | `Ok m ->
     Ok
       { ast = validator.ast
@@ -148,8 +143,7 @@ and validate_document validator doc =
   in
   validate_document' validator doc
 
-and validate_def validator def =
-  match def with
+and validate_def validator = function
   | Definition.TypeDefinition td -> validate_type_def validator td
   | Definition.Directive d -> validate_directive validator d
   | Definition.Schema s -> validate_schema validator s
@@ -286,8 +280,7 @@ and validate_field_args validator args field_name =
 and validate_field_args_input_type validator args field_name =
   match
     List.find args ~f:(fun a ->
-        let typ = Map.find validator.types (GraphqlType.name a.ty) in
-        match typ with
+        match Map.find validator.types (GraphqlType.name a.ty) with
         | None -> true
         | Some typ -> not (is_input_type typ))
   with
@@ -301,7 +294,7 @@ and validate_field_args_type validator args =
         | Error e -> true
         | _ -> false)
   with
-  | Some a -> Error (Validation_error.TypeNotFound a.name)
+  | Some a -> Error (Validation_error.TypeNotFound (GraphqlType.name a.ty))
   | None -> Ok validator
 
 and validate_field_args_name validator args field_name =
@@ -330,7 +323,7 @@ module Test = struct
       | Ok validator -> Fmt.pr "Valid Document"
       | Error msg -> Fmt.pr "Validation Error: %s\n" (Validation_error.show msg))
     | Error (line, err) ->
-      Fmt.failwith "error parsing program(%d): %s" line (Parse_error.show err)
+      Fmt.pr "error parsing program(%d): %s" line (Parse_error.show err)
   ;;
 
   let%expect_test "testValidDocument" =
@@ -408,6 +401,34 @@ directive @example(arg: String) on FIELD_DEFINITION
       type Query {
       }
        |} in
+    valiate_document input;
+    [%expect]
+  ;;
+
+  let%expect_test "testArgTypeNotFound" =
+    let input =
+      {|
+      type Query {
+      foo(arg1: [[Bar]]!): String
+      }
+       |}
+    in
+    valiate_document input;
+    [%expect]
+  ;;
+
+  let%expect_test "testArgNotInputType" =
+    let input =
+      {|
+      type Obj {
+      fld(arg1: String): Int
+      }
+
+      type Query {
+      foo(arg1: Obj!): String
+      }
+       |}
+    in
     valiate_document input;
     [%expect]
   ;;

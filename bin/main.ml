@@ -25,8 +25,8 @@ let parse file =
     let validator = Validator.validate validator document in
     (match validator with
     | Ok _ -> Fmt.pr "Vaidated schema: %s\n" file
-    | Error msg -> Fmt.pr "Validation Error: %s\n" (Parse_error.show msg))
-  | Error e -> Fmt.pr "Error parsing schema: %s\n" e
+    | Error msg -> Fmt.pr "Validation Error: %s\n" (Validation_error.show msg))
+  | Error (line, e) -> Fmt.pr "Error parsing schema(%d): %s\n" line (Parse_error.show e)
 ;;
 
 let command =
