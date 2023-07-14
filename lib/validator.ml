@@ -53,6 +53,16 @@ let is_input_type typ =
     false
 ;;
 
+let is_output_type typ =
+  match typ with
+  | TypeDefinition.Enum _
+  | TypeDefinition.Scalar _
+  | TypeDefinition.Object _
+  | TypeDefinition.Interface _
+  | TypeDefinition.Union _ -> true
+  | _ -> false
+;;
+
 let update_types_map validator key data =
   let dup = Map.add ~key ~data validator.types in
   match dup with
@@ -63,7 +73,7 @@ let update_types_map validator key data =
       ; types = m
       ; directives = validator.directives
       }
-  | `Duplicate -> Error (Parse_error.DuplicateType key)
+  | `Duplicate -> Error (Validation_error.DuplicateType key)
 ;;
 
 let add_type_def validator def =
@@ -89,7 +99,7 @@ let add_directive validator directive =
       ; types = validator.types
       ; directives = m
       }
-  | `Duplicate -> Error (Parse_error.DuplicateType directive.name)
+  | `Duplicate -> Error (Validation_error.DuplicateType directive.name)
 ;;
 
 let rec validate validator node =
@@ -148,7 +158,7 @@ and validate_def validator def =
 and validate_schema validator schema =
   let* validator =
     match schema.query with
-    | None -> Error Parse_error.QuerySchemaRequired
+    | None -> Error Validation_error.QuerySchemaRequired
     | _ -> Ok validator
   in
   let seen = Map.empty (module String) in
@@ -164,13 +174,13 @@ and validate_schema_type validator typ seen =
     let* validator =
       match Map.find validator.types s.name with
       | Some _ -> Ok validator
-      | None -> Error (Parse_error.TypeNotFound s.name)
+      | None -> Error (Validation_error.TypeNotFound s.name)
     in
     (match Map.add ~key:s.name ~data:s.name seen with
     | `Ok m ->
       let seen = m in
       Ok (validator, seen)
-    | `Duplicate -> Error (Parse_error.SchemaTypesMustBeDifferent s.name))
+    | `Duplicate -> Error (Validation_error.SchemaTypesMustBeDifferent s.name))
 
 and validate_directive validator directive =
   let* validator =
@@ -189,7 +199,7 @@ and validate_directive_not_referenced validator args name =
         | Some _ -> true
         | _ -> false)
   with
-  | Some a -> Error (Parse_error.DirectiveMustNotReferenceItself name)
+  | Some a -> Error (Validation_error.DirectiveMustNotReferenceItself name)
   | None -> Ok validator
 
 and validate_args validator args current_directive_name =
@@ -201,12 +211,12 @@ and validate_args validator args current_directive_name =
         | Some typ -> not (is_input_type typ))
   with
   | Some a ->
-    Error (Parse_error.DirectiveArgMustBeInputType (current_directive_name, a.name))
+    Error (Validation_error.DirectiveArgMustBeInputType (current_directive_name, a.name))
   | None -> Ok validator
 
 and validate_name validator name =
   match is_valid_name name with
-  | false -> Error (Parse_error.NameShouldNotStartWithUnderscores name)
+  | false -> Error (Validation_error.NameShouldNotStartWithUnderscores name)
   | _ -> Ok validator
 
 and validate_type_def validator td =
@@ -224,20 +234,49 @@ and validate_valid_type validator name =
   | "" -> Ok validator
   | _ ->
     (match Map.find validator.types name with
-    | None -> Error (Parse_error.TypeNotFound name)
+    | None -> Error (Validation_error.TypeNotFound name)
     | Some _ -> Ok validator)
 
 and validate_type_fields validator td =
-  validate_fields validator (TypeDefinition.fields td)
+  let* validator = validate_type_fields_count validator td in
+  validate_fields validator td
 
-and validate_fields validator fields =
+and validate_type_fields_count validator td =
+  match td with
+  | TypeDefinition.Object _ | TypeDefinition.Interface _ | TypeDefinition.Input _ ->
+    (match List.length (TypeDefinition.fields td) = 0 with
+    | true ->
+      Error (Validation_error.TypeMustHaveOneOrMoreFields (TypeDefinition.name td))
+    | false -> Ok validator)
+  | _ -> Ok validator
+
+and validate_fields validator td =
+  let fields =
+    match td with
+    | TypeDefinition.Object o -> o.fields
+    | _ -> []
+  in
+  validate_each_field validator fields
+
+and validate_each_field validator fields =
   match fields with
   | [] -> Ok validator
   | f :: rest ->
     let* validator = validate_name validator f.name in
+    let* validator = validate_field_output_type validator f in
     let* validator = validate_valid_type validator (GraphqlType.name f.ty) in
     let* validator = validate_field_args validator f.args f.name in
-    validate_fields validator rest
+    validate_each_field validator rest
+
+and validate_field_output_type validator field =
+  match
+    match Map.find validator.types (GraphqlType.name field.ty) with
+    | None -> true
+    | Some typ -> is_output_type typ
+  with
+  | false ->
+    Error (Validation_error.FieldMustBeOutputType (field.name, GraphqlType.name field.ty))
+  | true -> Ok validator
 
 and validate_field_args validator args field_name =
   let* validator = validate_field_args_name validator args field_name in
@@ -252,7 +291,7 @@ and validate_field_args_input_type validator args field_name =
         | None -> true
         | Some typ -> not (is_input_type typ))
   with
-  | Some a -> Error (Parse_error.FieldArgMustBeInputType (field_name, a.name))
+  | Some a -> Error (Validation_error.FieldArgMustBeInputType (field_name, a.name))
   | None -> Ok validator
 
 and validate_field_args_type validator args =
@@ -262,7 +301,7 @@ and validate_field_args_type validator args =
         | Error e -> true
         | _ -> false)
   with
-  | Some a -> Error (Parse_error.TypeNotFound a.name)
+  | Some a -> Error (Validation_error.TypeNotFound a.name)
   | None -> Ok validator
 
 and validate_field_args_name validator args field_name =
@@ -272,7 +311,7 @@ and validate_field_args_name validator args field_name =
         | Error e -> true
         | _ -> false)
   with
-  | Some a -> Error (Parse_error.InvalidFieldName (a.name, field_name))
+  | Some a -> Error (Validation_error.InvalidFieldName (a.name, field_name))
   | None -> Ok validator
 ;;
 
@@ -288,12 +327,13 @@ module Test = struct
       let validator = init program in
       let validator = validate validator program in
       (match validator with
-      | Ok validator -> print_validator validator
-      | Error msg -> Fmt.pr "Validation Error: %s\n" (Parse_error.show msg))
-    | Error msg -> Fmt.failwith "error parsing program...%s" msg
+      | Ok validator -> Fmt.pr "Valid Document"
+      | Error msg -> Fmt.pr "Validation Error: %s\n" (Validation_error.show msg))
+    | Error (line, err) ->
+      Fmt.failwith "error parsing program(%d): %s" line (Parse_error.show err)
   ;;
 
-  let%expect_test "testTypeCheck" =
+  let%expect_test "testValidDocument" =
     let input =
       {|
 
@@ -325,8 +365,50 @@ directive @example(arg: String) on FIELD_DEFINITION
 |}
     in
     valiate_document input;
-    [%expect {|
+    [%expect {| Valid Document |}]
+  ;;
 
-|}]
+  let%expect_test "testTypeNameValidation" =
+    let input = {|
+      type __Query {
+        foo: String
+      }
+       |} in
+    valiate_document input;
+    [%expect
+      {| Validation Error: Name '__Query' must not begin with '__', which is reserved by GraphQL introspection.`, |}]
+  ;;
+
+  let%expect_test "testFieldArgNameValidation" =
+    let input =
+      {|
+      type Query {
+        foo(__bar: Boolean): String
+      }
+       |}
+    in
+    valiate_document input;
+    [%expect]
+  ;;
+
+  let%expect_test "testValidTypeValidation" =
+    let input =
+      {|
+      type Query {
+        foo(__bar: Boolean): ReturnType
+      }
+       |}
+    in
+    valiate_document input;
+    [%expect]
+  ;;
+
+  let%expect_test "testValidTypeValidation" =
+    let input = {|
+      type Query {
+      }
+       |} in
+    valiate_document input;
+    [%expect]
   ;;
 end

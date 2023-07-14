@@ -124,6 +124,8 @@ let rec skip_while parser condition =
   if condition parser then skip_while (next_token parser) condition else parser
 ;;
 
+let parser_error parser err = Error (parser.lexer.line, err)
+
 let name_to_directive_location name =
   match name with
   | Token.Name "FIELD_DEFINITION" ->
@@ -166,7 +168,9 @@ let name_to_directive_location name =
   | Token.Name "FRAGMENT_DEFINITION" ->
     DirectiveLocation.ExecutableDirectiveLocation
       ExecutableDirectiveLocation.FRAGMENT_DEFINITION
-  | _ -> failwith (Printf.sprintf "unexpected location name: %s" (Token.show name))
+  | _ ->
+    failwith
+      (Parse_error.show (Parse_error.UnexpectedDirectiveLocation (Token.show name)))
 ;;
 
 let print_parser_state ?(msg = "parser: ") parser =
@@ -187,17 +191,15 @@ let failwith_parser_error parser msg =
        (Token.show parser.peek_token))
 ;;
 
-let rec parse parser =
-  let _, definitions = parse_ parser [] in
-  definitions
+let rec parse parser = parse_ parser []
 
 and parse_ parser definitions =
   match parser.cur_token with
-  | Token.Eof -> parser, List.rev definitions
+  | Token.Eof -> Ok (parser, List.rev definitions)
   | _ ->
     (match parse_definition parser with
-    | Ok (parser, s) -> parse_ (next_token parser) (s :: definitions)
-    | Error err -> failwith_parser_error parser err)
+    | Ok (parser, def) -> parse_ (next_token parser) (def :: definitions)
+    | Error err -> Error err)
 
 and parse_definition parser =
   let parser, description =
@@ -222,7 +224,8 @@ and parse_definition parser =
   | Token.Name "interface" -> parse_interface (next_token parser) description
   | Token.Name "directive" -> parse_directive_definition parser description
   | Token.Name "extend" -> parse_type_system_extension parser description
-  | _ -> failwith_parser_error parser "unexpected definition"
+  | _ ->
+    parser_error parser (Parse_error.UnexpectedDefinition (Token.show parser.cur_token))
 
 and parse_type_system_extension parser description =
   match parser.peek_token with
@@ -232,7 +235,11 @@ and parse_type_system_extension parser description =
   | Token.Name "scalar" -> parse_scalar_extension parser description
   | Token.Name "enum" -> parse_enum_extension parser description
   | Token.Name "input" -> parse_input_extension parser description
-  | _ -> failwith_parser_error parser "parse_type_system_extension: expected valid name"
+  | _ ->
+    parser_error
+      parser
+      (Parse_error.ExpectedValidTypeName
+         ("parse_type_system_extension", Token.show parser.peek_token))
 
 and parse_input_extension parser description =
   match expect_peek_name parser "input" with
@@ -255,7 +262,7 @@ and parse_input_extension parser description =
         , Definition.TypeDefinition
             (TypeDefinition.Input
                { name; fields = []; directives; description; builtin = false }) ))
-  | _ -> failwith_parser_error parser "parse_interface_extension"
+  | _ -> parser_error parser (Parse_error.ParseError "parse_interface_extension")
 
 and parse_enum_extension parser description =
   match expect_peek_name parser "enum" with
@@ -279,7 +286,7 @@ and parse_enum_extension parser description =
         , Definition.TypeDefinition
             (TypeDefinition.Enum
                { name; values = []; directives; description; builtin = false }) ))
-  | _ -> failwith_parser_error parser "parse_enum_extension"
+  | _ -> parser_error parser (Parse_error.ParseError "parse_enum_extension")
 
 and parse_scalar_extension parser description =
   match expect_peek_name parser "scalar" with
@@ -291,7 +298,10 @@ and parse_scalar_extension parser description =
       ( parser
       , Definition.TypeDefinition
           (TypeDefinition.Scalar { name; directives; description; builtin = false }) )
-  | _ -> failwith_parser_error parser "parse_scalar_extension: expected scalar keyword"
+  | _ ->
+    parser_error
+      parser
+      (Parse_error.ExpectedToken ("parse_scalar_extension", "expected scalar keyword"))
 
 and parse_union_extension parser description =
   match expect_peek_name parser "union" with
@@ -314,7 +324,7 @@ and parse_union_extension parser description =
         , Definition.TypeDefinition
             (TypeDefinition.Union
                { name; members = []; directives; description; builtin = false }) ))
-  | _ -> failwith_parser_error parser "parse_interface_extension"
+  | _ -> parser_error parser (Parse_error.ParseError "parse_union_extension")
 
 and parse_interface_extension parser description =
   match expect_peek_name parser "interface" with
@@ -337,7 +347,7 @@ and parse_interface_extension parser description =
         , Definition.TypeDefinition
             (TypeDefinition.Interface
                { name; fields = []; directives; description; builtin = false }) ))
-  | _ -> failwith_parser_error parser "parse_interface_extension"
+  | _ -> parser_error parser (Parse_error.ParseError "parse_interface_extention")
 
 and parse_type_extension parser description =
   match expect_peek_name parser "type" with
@@ -361,7 +371,7 @@ and parse_type_extension parser description =
         , Definition.TypeDefinition
             (TypeDefinition.Object
                { name; implements; fields = []; description; builtin = false }) ))
-  | _ -> failwith_parser_error parser "parse_type_extension"
+  | _ -> parser_error parser (Parse_error.ParseError "parse_type_extention")
 
 and parse_directive_definition parser description =
   let parser, ok = expect_peek_at parser in
@@ -398,8 +408,10 @@ and parse_directive_definition parser description =
                   { name; args; locations; description; builtin = false } )
       in
       parse_locations (next_token parser) [ name_to_directive_location parser.peek_token ]
-    | false -> failwith_parser_error parser "parse_directive: expected 'on'")
-  | false -> failwith_parser_error parser "parse_directive: expected '@'"
+    | false ->
+      parser_error parser (Parse_error.ExpectedToken ("parse_directive", "expected 'on'")))
+  | false ->
+    parser_error parser (Parse_error.ExpectedToken ("parse_directive", "expected '@'"))
 
 and parse_interface parser description =
   let* parser, name = parse_name parser in
@@ -439,16 +451,31 @@ and parse_fragment parser =
           , Definition.ExecutableDefinition
               (ExecutableDefinition.FragmentDefinition { name; type_condition; selection })
           )
-      else failwith_parser_error parser "expected right brace after fragment seletion"
-    else failwith_parser_error parser "expected left brace for fragment seletion"
-  | _ -> failwith_parser_error parser "expected 'on' token"
+      else
+        parser_error
+          parser
+          (Parse_error.ExpectedToken
+             ("parse_fragment", "expected right brace after fragment selection"))
+    else
+      parser_error
+        parser
+        (Parse_error.ExpectedToken
+           ("parse_fragment", "expected left brace for fragment selection"))
+  | _ ->
+    parser_error
+      parser
+      (Parse_error.ExpectedToken ("parse_fragments", "expected 'on' token"))
 
 and parse_executable_document parser =
   match parser.cur_token with
   | Token.LeftBrace -> failwith_parser_error parser "unnamed query is not supported"
   | Token.Name "query" -> parse_query parser
   | Token.Name "mutation" -> parse_mutation parser
-  | _ -> failwith_parser_error parser "expected query or mutation"
+  | _ ->
+    parser_error
+      parser
+      (Parse_error.ExpectedToken
+         ("parse_executable_document", "expected query or mutation"))
 
 and parse_query parser =
   let parser = next_token parser in
@@ -477,16 +504,26 @@ and parse_query parser =
     let* parser, selection =
       match parser, ok with
       | parser, true -> parse_selection_set parser
-      | _ -> failwith_parser_error parser "parse_query: expected left brace for section"
+      | _ ->
+        parser_error
+          parser
+          (Parse_error.ExpectedToken ("parse_query", "expected left brace for selection"))
     in
     let parser, ok = expect_peek_right_brace parser in
     (match ok with
     | false ->
-      failwith_parser_error parser "expected closing right brace for selection set"
+      parser_error
+        parser
+        (Parse_error.ExpectedToken
+           ("parse_query", "expected closing right brace for selection set"))
     | true ->
       let parser, ok = expect_peek_right_brace parser in
       (match ok with
-      | false -> failwith_parser_error parser "expected closing right brace for query"
+      | false ->
+        parser_error
+          parser
+          (Parse_error.ExpectedToken
+             ("parse_query", "expected closing right brace for query"))
       | true ->
         Ok
           ( parser
@@ -498,7 +535,8 @@ and parse_query parser =
                  ; variables = vars
                  ; selection
                  }) )))
-  | _ -> failwith_parser_error parser "parse_query: expected left brace"
+  | _ ->
+    parser_error parser (Parse_error.ExpectedToken ("parse_query", "expected left brace"))
 
 and parse_selection_set parser =
   let rec parse_selection_set' parser set =
@@ -533,11 +571,17 @@ and parse_args parser =
         let* parser, var_name = parse_name parser in
         let arg = OperationArg.{ name; value = var_name } in
         parse_args' parser (arg :: args)
-      | _ -> failwith_parser_error parser "parse_args: expected colon after var name")
+      | _ ->
+        parser_error
+          parser
+          (Parse_error.ExpectedToken ("parse_args", "expected colon after var name")))
     | Token.RightParen ->
       let parser = next_token parser in
       Ok (parser, Some args)
-    | _ -> failwith_parser_error parser "parse_args: peek should be a colon"
+    | _ ->
+      parser_error
+        parser
+        (Parse_error.ExpectedToken ("parse_args", "peek should be colon"))
   in
   parse_args' parser []
 
@@ -564,9 +608,15 @@ and parse_variables parser =
             }
         in
         parse_variables' parser (var :: vars)
-      | _ -> failwith_parser_error parser "parse_variables: expected colon after var name")
+      | _ ->
+        parser_error
+          parser
+          (Parse_error.ExpectedToken ("parse_variables", "expected colon after var name")))
     | Token.RightParen -> Ok (parser, Some vars)
-    | _ -> failwith_parser_error parser "parse_varialbes: peek should be a colon"
+    | _ ->
+      parser_error
+        parser
+        (Parse_error.ExpectedToken ("parse_variableds", "peek should be colon"))
   in
   parse_variables' parser []
 
@@ -718,13 +768,21 @@ and parse_directive_args parser =
         let* parser, name = parse_name parser in
         (match peek_is parser Token.Colon with
         | true ->
-          let parser, value = parse_value_literal parser in
+          let* parser, value = parse_value_literal parser in
           (match value with
           | Some v ->
             parse_directive_args' parser (DirectiveArg.{ name; value = v } :: args)
           | None -> parse_directive_args' parser args)
-        | false -> failwith "parse_directive_args: expected colon after arg name")
-      | _ -> failwith "parse_directive_args: expected name or right paren"
+        | false ->
+          parser_error
+            parser
+            (Parse_error.ExpectedToken
+               ("parse_directive_args", "expected colon after arg name")))
+      | _ ->
+        parser_error
+          parser
+          (Parse_error.ExpectedToken
+             ("parse_directive_args", "expected name or right paren"))
     in
     parse_directive_args' parser []
   | _ -> Ok (parser, [])
@@ -743,7 +801,7 @@ and parse_schema parser description =
   | Token.LeftBrace ->
     let parser = next_token parser in
     parse_schema_def (next_token parser) description directives
-  | _ -> Error "parse_schema: expected left brace"
+  | _ -> parser_error parser (Parse_error.ExpectedToken ("parse_schema", "left brace"))
 
 and parse_schema_def parser description directives =
   let rec parse_schema_def' parser fields =
@@ -755,7 +813,10 @@ and parse_schema_def parser description directives =
       | Token.RightBrace -> Ok (parser, List.rev_append [ op ] fields)
       | Token.Name _ -> parse_schema_def' (next_token parser) (op :: fields)
       | Token.StringLiteral _ -> parse_schema_def' (next_token parser) (op :: fields)
-      | _ -> failwith_parser_error parser "parse_schema_def: unexpected token")
+      | _ ->
+        parser_error
+          parser
+          (Parse_error.ExpectedToken ("parse_schema_def", "unexpected token")))
   in
   let* parser, fields = parse_schema_def' parser [] in
   let query = List.find fields ~f:(fun (name, _) -> name_is name "query") in
@@ -772,7 +833,10 @@ and parse_schema_def parser description directives =
           ; directives
           ; description
           } )
-  | _ -> Error "parse_schema_def: expected closing right brace"
+  | _ ->
+    parser_error
+      parser
+      (Parse_error.ExpectedToken ("parse_schema_def", "expected closing right brace"))
 
 and make_schema_op op =
   match op with
@@ -797,10 +861,9 @@ and parse_schema_op_type parser =
     let* parser, name = parse_name parser in
     Ok (parser, (op_name, BaseValue.{ name; description }))
   | _ ->
-    Error
-      (Printf.sprintf
-         "parse_schema_op_type: expected colon: %s"
-         (Token.show parser.peek_token))
+    parser_error
+      parser
+      (Parse_error.ExpectedToken ("parse_schema_op_type", "expected colon"))
 
 and parse_type parser description =
   let* parser, name = parse_name parser in
@@ -836,7 +899,10 @@ and parse_implements parser =
         let parser = next_token parser in
         parse_implements' parser (name :: names)
       | _ ->
-        failwith_parser_error parser "parse_implements': expected &, name or left brace"
+        parser_error
+          parser
+          (Parse_error.ExpectedToken
+             ("parse_implements", "expected '&', name or left brace"))
     in
     parse_implements' parser []
   | _ -> Ok (parser, [])
@@ -868,10 +934,10 @@ and parse_type_definition parser =
         let parser = next_token parser in
         let parser = next_token parser in
         let* parser, ty = parse_graphql_type parser in
-        let parser, default_value =
+        let* parser, default_value =
           match peek_is parser Token.Equal with
           | true -> parse_value_literal (next_token parser)
-          | false -> parser, None
+          | false -> Ok (parser, None)
         in
         let* parser, directives = parse_directives parser in
         let field =
@@ -881,26 +947,32 @@ and parse_type_definition parser =
       | Token.Name _ ->
         let parser = next_token parser in
         let* parser, ty = parse_graphql_type parser in
-        let parser, default_value =
+        let* parser, default_value =
           match peek_is parser Token.Equal with
           | true -> parse_value_literal (next_token parser)
-          | false -> parser, None
+          | false -> Ok (parser, None)
         in
         let* parser, directives = parse_directives parser in
         let field = Field.{ name; args; ty; directives; default_value; description } in
         parse_type_def' parser (field :: fields)
       | _ ->
-        failwith_parser_error parser "parse_type_definition: expected a name or a colon")
+        parser_error
+          parser
+          (Parse_error.ExpectedToken ("parse_type_definition", "expected a name or colon")))
     | _ ->
-      failwith_parser_error
+      parser_error
         parser
-        "parse_type_definition: expected right brace, comment, or name"
+        (Parse_error.ExpectedToken
+           ("parse_type_definition", "expected right brace, comment, or name"))
   in
   let* parser, td = parse_type_def' parser [] in
   let parser, ok = expect_peek_right_brace parser in
   match parser, ok with
   | parser, true -> Ok (parser, td)
-  | _, false -> Error "expected right brace"
+  | _, false ->
+    parser_error
+      parser
+      (Parse_error.ExpectedToken ("parse_type_definition", "expected right brace"))
 
 and parse_field_args parser =
   let rec parse_field_args' parser args =
@@ -929,10 +1001,10 @@ and parse_field_args parser =
           let parser = next_token parser in
           let parser = next_token parser in
           let* parser, gql_type = parse_graphql_type parser in
-          let parser, default_value =
+          let* parser, default_value =
             match parser.peek_token with
             | Token.Equal -> parse_value_literal parser
-            | _ -> parser, None
+            | _ -> Ok (parser, None)
           in
           let* parser, directives = parse_directives parser in
           let parser, arg =
@@ -953,9 +1025,9 @@ and parse_value_literal parser =
   match parser.peek_token with
   | Token.StringLiteral s ->
     let parser = next_token parser in
-    parser, Some (Value.String s)
+    Ok (parser, Some (Value.String s))
   | Token.Number { kind; value } ->
-    next_token parser, Some (Value.Int (int_of_string value))
+    Ok (next_token parser, Some (Value.Int (int_of_string value)))
   | Token.LeftBracket ->
     (* let parser = next_token parser in *)
     let rec parse_list_values parser vals =
@@ -963,9 +1035,9 @@ and parse_value_literal parser =
       match parser.peek_token with
       | Token.RightBracket ->
         let parser = next_token parser in
-        parser, Some (Value.List (List.rev vals))
+        Ok (parser, Some (Value.List (List.rev vals)))
       | _ ->
-        let parser, value = parse_value_literal parser in
+        let* parser, value = parse_value_literal parser in
         (match value with
         | Some v -> parse_list_values parser (v :: vals)
         | _ -> parse_list_values parser vals)
@@ -978,25 +1050,32 @@ and parse_value_literal parser =
       match parser.peek_token with
       | Token.RightBrace ->
         let parser = next_token parser in
-        parser, Some (Value.Object (List.rev pairs))
+        Ok (parser, Some (Value.Object (List.rev pairs)))
       | Token.Name name ->
         let parser = next_token parser in
         (match peek_is parser Token.Colon with
         | true ->
           let parser = next_token parser in
-          let parser, value = parse_value_literal parser in
+          let* parser, value = parse_value_literal parser in
           (match value with
           | Some v -> parse_object_values parser ((name, v) :: pairs)
           | _ -> parse_object_values parser pairs)
-        | _ -> failwith "parse_value_literal: expected colon while parsing object literal")
+        | _ ->
+          parser_error
+            parser
+            (Parse_error.ExpectedToken
+               ("parse_value_literal", "expected colon while parsing object literal")))
       | _ ->
-        failwith_parser_error parser "parse_value_literal: expected right brace or name"
+        parser_error
+          parser
+          (Parse_error.ExpectedToken
+             ("parse_value_literal", "expected right brace or name"))
     in
     parse_object_values parser []
-  | Token.True -> next_token parser, Some (Value.Boolean true)
-  | Token.False -> next_token parser, Some (Value.Boolean false)
-  | Token.Null -> next_token parser, Some Value.Null
-  | _ -> parser, None
+  | Token.True -> Ok (next_token parser, Some (Value.Boolean true))
+  | Token.False -> Ok (next_token parser, Some (Value.Boolean false))
+  | Token.Null -> Ok (next_token parser, Some Value.Null)
+  | _ -> Ok (parser, None)
 
 and parse_graphql_type parser =
   match parser.cur_token with
@@ -1011,7 +1090,11 @@ and parse_graphql_type parser =
         let parser = next_token parser in
         Ok (parser, GraphqlType.NonNullType (GraphqlType.ListType gql_type))
       | _ -> Ok (parser, GraphqlType.ListType gql_type))
-    | _ -> Error "parse_graphql_type: expected closing right bracket for list type")
+    | _ ->
+      parser_error
+        parser
+        (Parse_error.ExpectedToken
+           ("parse_graphql_type", "expected closing right bracket for list type")))
   | Token.Name _ ->
     let* parser, name = parse_name parser in
     (match parser.peek_token with
@@ -1019,7 +1102,10 @@ and parse_graphql_type parser =
       let parser = next_token parser in
       Ok (parser, GraphqlType.NonNullType (GraphqlType.NamedType name))
     | _ -> Ok (parser, GraphqlType.NamedType name))
-  | _ -> Error "parse_graphql_type: expected a name or left bracket"
+  | _ ->
+    parser_error
+      parser
+      (Parse_error.ExpectedToken ("parse_graphql_type", "expected a name or left bracket"))
 
 and parse_name parser =
   match parser.cur_token with
@@ -1030,12 +1116,7 @@ and parse_name parser =
   | Token.Input ->
     Ok (parser, Token.to_name Token.Input)
     (* HACK: if type is seen where a name is expected than set name to "input" *)
-  | _ ->
-    Error
-      (Printf.sprintf
-         "parse_name: expected name: cur: %s, peek: %s"
-         (Token.show parser.cur_token)
-         (Token.show parser.peek_token))
+  | _ -> parser_error parser (Parse_error.ExpectedToken ("parse_name", "expected name"))
 ;;
 
 let mark_type_as_builtin def =
@@ -1123,23 +1204,23 @@ let mark_builtin defs doc =
 let parse_document input =
   let lexer = Lexer.init input in
   let parser = init lexer in
-  let definitions = parse parser in
+  let* _, definitions = parse parser in
   Ok (Ast.Document definitions)
 ;;
 
 let parse_documents docs =
   let rec parse_many' docs definitions =
     match docs with
-    | [] -> List.rev definitions
+    | [] -> Ok (List.rev definitions)
     | doc :: rest ->
       let _, input = doc in
       let lexer = Lexer.init input in
       let parser = init lexer in
-      let defs = parse parser in
+      let* _, defs = parse parser in
       let defs = mark_builtin defs doc in
       parse_many' rest (List.append defs definitions)
   in
-  let definitions = parse_many' docs [] in
+  let* definitions = parse_many' docs [] in
   Ok (Ast.Document definitions)
 ;;
 
@@ -1166,8 +1247,9 @@ module Test = struct
   let expect_document input =
     let lexer = Lexer.init input in
     let parser = init lexer in
-    let program = parse parser in
-    print_node (Ast.Document program)
+    match parse parser with
+    | Ok (_, program) -> print_node (Ast.Document program)
+    | Error _ -> Fmt.pr "error parsing document"
   ;;
 
   (* match program with
@@ -1201,7 +1283,7 @@ module Test = struct
          Document: [
              (Scalar
             { name = "UUID"; directives = [];
-              description = (Some "Scalar Description") })
+              description = (Some "Scalar Description"); builtin = false })
 
              (Object
             { name = "Query"; implements = [];
@@ -1225,7 +1307,7 @@ module Test = struct
                         (NonNullType (ListType (NonNullType (NamedType "String"))))));
                   directives = []; default_value = None; description = None }
                 ];
-              description = (Some "description for type") })
+              description = (Some "description for type"); builtin = false })
 
          ]
 
@@ -1257,7 +1339,8 @@ module Test = struct
         [{ name = "skip"; args = [] }; { name = "example"; args = [] }];
         description = (Some "schema description") }
 
-          (Scalar { name = "Status"; directives = []; description = None })
+          (Scalar
+         { name = "Status"; directives = []; description = None; builtin = false })
 
       ] |}]
   ;;
@@ -1283,7 +1366,8 @@ module Test = struct
     [%expect
       {|
       Document: [
-          (Scalar { name = "UUID"; directives = []; description = None })
+          (Scalar
+         { name = "UUID"; directives = []; description = None; builtin = false })
 
           (Object
          { name = "Query"; implements = [];
@@ -1298,7 +1382,7 @@ module Test = struct
               ty = (NamedType "String"); directives = []; default_value = None;
               description = None }
              ];
-           description = None })
+           description = None; builtin = false })
 
           (Object
          { name = "Mutation"; implements = [];
@@ -1323,7 +1407,7 @@ module Test = struct
                ty = (NonNullType (ListType (NonNullType (NamedType "String"))));
                directives = []; default_value = None; description = None }
              ];
-           description = None })
+           description = None; builtin = false })
 
       ] |}]
   ;;
@@ -1347,7 +1431,8 @@ module Test = struct
               members =
               [{ name = "Bar"; description = (Some "bar union desc") };
                 { name = "Foobar"; description = None }];
-              directives = []; description = (Some "union description") })
+              directives = []; description = (Some "union description");
+              builtin = false })
 
          ] |}]
   ;;
@@ -1376,7 +1461,8 @@ module Test = struct
                    };
                   { name = "FOOBAR"; directives = []; description = None };
                   { name = "BAZ"; directives = []; description = (Some "baz desc") }];
-                directives = []; description = (Some "Enum description") })
+                directives = []; description = (Some "Enum description");
+                builtin = false })
 
            ] |}]
   ;;
@@ -1404,7 +1490,8 @@ module Test = struct
     [%expect
       {|
            Document: [
-               (Scalar { name = "Cost"; directives = []; description = None })
+               (Scalar
+              { name = "Cost"; directives = []; description = None; builtin = false })
 
                (Comment "cost type")
 
@@ -1416,7 +1503,7 @@ module Test = struct
                 [{ name = "Bar"; description = None };
                   { name = "Foobar"; description = None };
                   { name = "Qux"; description = None }];
-                directives = []; description = None })
+                directives = []; description = None; builtin = false })
 
                (Enum
               { name = "Kind";
@@ -1425,7 +1512,7 @@ module Test = struct
                   { name = "SOUTH"; directives = []; description = None };
                   { name = "EAST"; directives = []; description = None };
                   { name = "WEST"; directives = []; description = None }];
-                directives = []; description = None })
+                directives = []; description = None; builtin = false })
 
                (Object
               { name = "Mutation"; implements = [];
@@ -1433,7 +1520,7 @@ module Test = struct
                 [{ name = "foo"; args = []; ty = (NamedType "String"); directives = [];
                    default_value = None; description = None }
                   ];
-                description = None })
+                description = None; builtin = false })
 
            ] |}]
   ;;
@@ -1467,7 +1554,8 @@ module Test = struct
                     ty = (ListType (NonNullType (NamedType "String"))); directives = [];
                     default_value = None; description = None }
                   ];
-                directives = []; description = (Some "Input description") })
+                directives = []; description = (Some "Input description");
+                builtin = false })
 
            ] |}]
   ;;
@@ -1507,7 +1595,7 @@ module Test = struct
                     ty = (ListType (NonNullType (NamedType "String"))); directives = [];
                     default_value = None; description = None }
                   ];
-                description = None })
+                description = None; builtin = false })
 
            ] |}]
   ;;
@@ -1540,7 +1628,7 @@ module Test = struct
                    ty = (NamedType "String"); directives = []; default_value = None;
                    description = None }
                   ];
-                description = None })
+                description = None; builtin = false })
 
            ] |}]
   ;;
@@ -1675,7 +1763,8 @@ fragment Actions on Actions {
                ty = (NonNullType (ListType (NamedType "String"))); directives = [];
                default_value = None; description = (Some "field block desc") }
              ];
-           directives = []; description = (Some "interface description") })
+           directives = []; description = (Some "interface description");
+           builtin = false })
 
       ]
 
@@ -1701,7 +1790,7 @@ type Person implements NamedEntity {
              { name = "age"; args = []; ty = (NamedType "Int"); directives = [];
                default_value = None; description = None }
              ];
-           description = None })
+           description = None; builtin = false })
 
       ]
 |}]
@@ -1728,7 +1817,7 @@ type Person implements NamedEntity & ValuedEntity{
              { name = "age"; args = []; ty = (NamedType "Int"); directives = [];
                default_value = None; description = None }
              ];
-           description = None })
+           description = None; builtin = false })
 
       ]
 |}]
@@ -1746,7 +1835,7 @@ directive @example on FIELD_DEFINITION
       Document: [
           { name = "example"; args = [];
         locations = [(TypeSystemDirectiveLocation FIELD_DEFINITION)];
-        description = (Some "directive desc") }
+        description = (Some "directive desc"); builtin = false }
 
       ]
   |}]
@@ -1774,7 +1863,7 @@ bar: String
         [(TypeSystemDirectiveLocation INTERFACE);
           (TypeSystemDirectiveLocation OBJECT);
           (TypeSystemDirectiveLocation FIELD_DEFINITION)];
-        description = None }
+        description = None; builtin = false }
 
           (Object
          { name = "Foo"; implements = [];
@@ -1782,7 +1871,7 @@ bar: String
            [{ name = "bar"; args = []; ty = (NamedType "String"); directives = [];
               default_value = None; description = None }
              ];
-           description = None })
+           description = None; builtin = false })
 
       ]
 
@@ -1810,7 +1899,7 @@ bar: String
         locations =
         [(TypeSystemDirectiveLocation ENUM_VALUE);
           (TypeSystemDirectiveLocation FIELD_DEFINITION)];
-        description = None }
+        description = None; builtin = false }
 
       ]
 |}]
@@ -1841,7 +1930,7 @@ directive @deprecated(
         locations =
         [(TypeSystemDirectiveLocation ENUM_VALUE);
           (TypeSystemDirectiveLocation FIELD_DEFINITION)];
-        description = None }
+        description = None; builtin = false }
 
       ]
 
@@ -1874,7 +1963,7 @@ type ExampleType {
                  ];
                default_value = None; description = None }
              ];
-           description = None })
+           description = None; builtin = false })
 
       ]
 

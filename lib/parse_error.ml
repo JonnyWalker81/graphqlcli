@@ -1,30 +1,17 @@
 type t =
-  | DuplicateType of string
-  | TypeNotFound of string
-  | QuerySchemaRequired
-  | SchemaTypesMustBeDifferent of string
-  | NameShouldNotStartWithUnderscores of string
-  | DirectiveArgMustBeInputType of (string * string)
-  | DirectiveMustNotReferenceItself of string
-  | InvalidFieldName of (string * string)
-  | FieldArgMustBeInputType of (string * string)
+  | UnexpectedDefinition of string
+  | ExpectedToken of (string * string)
+  | ParseError of string
+  | UnexpectedDirectiveLocation of string
+  | ExpectedValidTypeName of (string * string)
 
 let show = function
-  | DuplicateType s -> Fmt.str "Duplicate type found: %s" s
-  | TypeNotFound s -> Fmt.str "Type not found: %s" s
-  | QuerySchemaRequired -> Fmt.str "Schema requires at least a Query field"
-  | SchemaTypesMustBeDifferent typ ->
-    Fmt.str "Schema types must be different, %s used multiple times" typ
-  | NameShouldNotStartWithUnderscores s ->
-    Fmt.str
-      "Name '%s' must not begin with '__', which is reserved by GraphQL introspection.`, "
-      s
-  | DirectiveArgMustBeInputType (dir, typ) ->
-    Fmt.str "Directive, '%s', with arg '%s', must be input type." dir typ
-  | DirectiveMustNotReferenceItself name ->
-    Fmt.str "Directive arg, '%s', should not use its own directive." name
-  | InvalidFieldName (a, f) ->
-    Fmt.str "Invalid Field Name, '%s', for type '%s', cannot start with undersores." a f
-  | FieldArgMustBeInputType (dir, typ) ->
-    Fmt.str "Field, '%s', with arg '%s', must be input type." dir typ
+  | UnexpectedDefinition name -> Fmt.str "Unexpected Definition: %s" name
+  | ExpectedToken (location, token) ->
+    Fmt.str "Unexpected Token: %s, in %s" location token
+  | ParseError tag -> Fmt.str "Error parsing document: %s" tag
+  | UnexpectedDirectiveLocation name ->
+    Fmt.str "Unexpected directive location name: %s" name
+  | ExpectedValidTypeName (tag, name) ->
+    Fmt.str "Invalid type token name (%s): %s" tag name
 ;;
