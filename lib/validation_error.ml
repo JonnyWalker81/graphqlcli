@@ -10,6 +10,8 @@ type t =
   | FieldArgMustBeInputType of (string * string)
   | TypeMustHaveOneOrMoreFields of string
   | FieldMustBeOutputType of (string * string)
+  | MultipleSchemaEntryPoints
+  | ExpectedType of string
 
 let show = function
   | DuplicateType s -> Fmt.str "Duplicate type found: %s" s
@@ -33,4 +35,8 @@ let show = function
     Fmt.str "Type, '%s', needs to have one or more fields." name
   | FieldMustBeOutputType (field, name) ->
     Fmt.str "Field, '%s', with type '%s', must be output type." field name
+  | MultipleSchemaEntryPoints ->
+    Fmt.str
+      "Cannot have multiple schema entry points, consider schema extensions instead."
+  | ExpectedType t -> Fmt.str "Expected: %s" t
 ;;

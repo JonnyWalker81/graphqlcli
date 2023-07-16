@@ -13,6 +13,8 @@ type t =
   ; schema : Schema.t option
   ; types : TypeDefinition.t validator_map
   ; directives : DirectiveDefinition.t validator_map
+  ; possible_types : TypeDefinition.t validator_map
+  ; implements : TypeDefinition.t validator_map
   }
 
 let init ast =
@@ -20,6 +22,8 @@ let init ast =
   ; schema = None
   ; types = Map.empty (module String)
   ; directives = Map.empty (module String)
+  ; possible_types = Map.empty (module String)
+  ; implements = Map.empty (module String)
   }
 ;;
 
@@ -68,20 +72,41 @@ let update_types_map validator key data =
       ; schema = validator.schema
       ; types = m
       ; directives = validator.directives
+      ; possible_types = validator.possible_types
+      ; implements = validator.implements
       }
   | `Duplicate -> Error (Validation_error.DuplicateType key)
 ;;
 
-let add_type_def validator def =
-  match def with
-  | TypeDefinition.Object o -> update_types_map validator o.name def
-  | TypeDefinition.Scalar s -> update_types_map validator s.name def
-  | TypeDefinition.Enum e -> update_types_map validator e.name def
-  | TypeDefinition.Union u -> update_types_map validator u.name def
-  | TypeDefinition.Interface i -> update_types_map validator i.name def
-  | TypeDefinition.Input i -> update_types_map validator i.name def
+let update_possible_types_map validator key data =
+  match Map.add ~key ~data validator.possible_types with
+  | `Ok m ->
+    Ok
+      { ast = validator.ast
+      ; schema = validator.schema
+      ; types = validator.types
+      ; directives = validator.directives
+      ; possible_types = m
+      ; implements = validator.implements
+      }
   | _ -> Ok validator
 ;;
+
+let update_implements_map validator key data =
+  match Map.add ~key ~data validator.implements with
+  | `Ok m ->
+    Ok
+      { ast = validator.ast
+      ; schema = validator.schema
+      ; types = validator.types
+      ; directives = validator.directives
+      ; possible_types = validator.possible_types
+      ; implements = m
+      }
+  | _ -> Ok validator
+;;
+
+let add_type_def validator def = update_types_map validator (TypeDefinition.name def) def
 
 let add_directive validator directive =
   match
@@ -93,44 +118,86 @@ let add_directive validator directive =
       ; schema = validator.schema
       ; types = validator.types
       ; directives = m
+      ; possible_types = validator.possible_types
+      ; implements = validator.implements
       }
   | `Duplicate -> Error (Validation_error.DuplicateType directive.name)
 ;;
 
 let rec validate validator node =
-  let* validator = build_map validator node in
+  let* validator = build_types_map validator node in
+  let* validator = build_possible_types_map validator node in
   match node with
   | Ast.Document d -> validate_document validator d
-  | _ -> failwith "unexpected node"
+  | _ -> Error (Validation_error.ExpectedType "node type")
 
-and build_map validator node =
+and build_possible_types_map validator node =
+  match node with
+  | Ast.Document defs -> process_types validator defs
+  | _ -> Error (Validation_error.ExpectedType "document (build_possible_types_map)")
+
+and process_types validator defs =
+  let rec process_types' defs =
+    match defs with
+    | [] -> Ok validator
+    | def :: rest ->
+      (match def with
+      | Definition.TypeDefinition td ->
+        let* validator = process_possible_types validator td in
+        process_types' defs
+      | _ -> process_types' rest)
+  in
+  process_types' defs
+
+and process_possible_types validator def =
+  match def with
+  | TypeDefinition.Union u -> process_possible_types' validator u.members
+  | _ -> Ok validator
+
+and process_possible_types' validator defs =
+  match defs with
+  | [] -> Ok validator
+  | def :: rest ->
+    (match Map.find validator.types def.name with
+    | Some t -> process_possible_types' validator rest
+    | None -> Error (Validation_error.TypeNotFound def.name))
+
+and build_types_map validator node =
   match node with
   | Ast.Document defs ->
-    let rec process_document validator defs =
-      match defs with
-      | [] -> Ok validator
-      | def :: rest ->
-        (match def with
-        | Definition.TypeDefinition def ->
-          (match add_type_def validator def with
-          | Ok validator -> process_document validator rest
-          | e -> e)
-        | Definition.Directive directive ->
-          (match add_directive validator directive with
-          | Ok validator -> process_document validator rest
-          | e -> e)
-        | Definition.Schema s ->
-          process_document
-            { ast = validator.ast
-            ; schema = Some s
-            ; types = validator.types
-            ; directives = validator.directives
-            }
-            rest
-        | _ -> Ok validator)
-    in
-    process_document validator defs
-  | _ -> failwith "expected document"
+    (match count_schemas validator defs with
+    | i when i > 1 -> Error Validation_error.MultipleSchemaEntryPoints
+    | _ -> process_document validator defs)
+  | _ -> Error (Validation_error.ExpectedType "expected document (build_types_map)")
+
+and process_document validator defs =
+  match defs with
+  | [] -> Ok validator
+  | def :: rest ->
+    (match def with
+    | Definition.TypeDefinition def ->
+      let* validator = add_type_def validator def in
+      process_document validator rest
+    | Definition.Directive directive ->
+      let* validator = add_directive validator directive in
+      process_document validator rest
+    | Definition.Schema s ->
+      process_document
+        { ast = validator.ast
+        ; schema = Some s
+        ; types = validator.types
+        ; directives = validator.directives
+        ; possible_types = validator.possible_types
+        ; implements = validator.implements
+        }
+        rest
+    | _ -> Ok validator)
+
+and count_schemas validator defs =
+  List.count defs ~f:(fun d ->
+      match d with
+      | Definition.Schema _ -> true
+      | _ -> false)
 
 and validate_document validator doc =
   let rec validate_document' validator defs =
@@ -314,7 +381,6 @@ module Test = struct
   let valiate_document input =
     let prelude = In_channel.read_all "../../../prelude.graphql" in
     let program = Parser.parse_documents [ true, prelude; false, input ] in
-    (* match Ok(Ast.Document program) with *)
     match program with
     | Ok program ->
       let validator = init program in
@@ -361,6 +427,55 @@ directive @example(arg: String) on FIELD_DEFINITION
     [%expect {| Valid Document |}]
   ;;
 
+  let%expect_test "testSchemaTypeNotFound" =
+    let input = {|
+      schema {
+        query: MyQuery
+      }
+       |} in
+    valiate_document input;
+    [%expect {| Validation Error: Type not found: MyQuery |}]
+  ;;
+
+  let%expect_test "testSchemaDuplicateTypes" =
+    let input =
+      {|
+      schema {
+        query: MyQuery
+        mutation: MyQuery
+      }
+
+      type MyQuery {
+         field1: String
+        }
+       |}
+    in
+    valiate_document input;
+    [%expect
+      {| Validation Error: Schema types must be different, MyQuery used multiple times |}]
+  ;;
+
+  let%expect_test "testMultipleSchemas" =
+    let input =
+      {|
+      schema {
+        query: MyQuery
+      }
+
+      schema {
+        query: MyQuery
+      }
+
+      type MyQuery {
+         field1: String
+        }
+       |}
+    in
+    valiate_document input;
+    [%expect
+      {| Validation Error: Cannot have multiple schema entry points, consider schema extensions instead. |}]
+  ;;
+
   let%expect_test "testTypeNameValidation" =
     let input = {|
       type __Query {
@@ -381,7 +496,8 @@ directive @example(arg: String) on FIELD_DEFINITION
        |}
     in
     valiate_document input;
-    [%expect]
+    [%expect
+      {| Validation Error: Invalid Field Name, '__bar', for type 'foo', cannot start with undersores. |}]
   ;;
 
   let%expect_test "testValidTypeValidation" =
@@ -393,7 +509,7 @@ directive @example(arg: String) on FIELD_DEFINITION
        |}
     in
     valiate_document input;
-    [%expect]
+    [%expect {| Validation Error: Type not found: ReturnType |}]
   ;;
 
   let%expect_test "testValidTypeValidation" =
@@ -402,7 +518,7 @@ directive @example(arg: String) on FIELD_DEFINITION
       }
        |} in
     valiate_document input;
-    [%expect]
+    [%expect {| Validation Error: Type, 'Query', needs to have one or more fields. |}]
   ;;
 
   let%expect_test "testArgTypeNotFound" =
@@ -414,7 +530,7 @@ directive @example(arg: String) on FIELD_DEFINITION
        |}
     in
     valiate_document input;
-    [%expect]
+    [%expect {| Validation Error: Type not found: Bar |}]
   ;;
 
   let%expect_test "testArgNotInputType" =
@@ -430,6 +546,27 @@ directive @example(arg: String) on FIELD_DEFINITION
        |}
     in
     valiate_document input;
-    [%expect]
+    [%expect {| Validation Error: Field, 'foo', with arg 'arg1', must be input type. |}]
+  ;;
+
+  let%expect_test "testFielfNotOutputType" =
+    let input =
+      {|
+      type Obj {
+        fld(arg1: String): Int
+      }
+
+      input FooInput {
+        arg1: String
+      }
+
+      type Query {
+        foo(arg1: Obj!): FooInput
+      }
+       |}
+    in
+    valiate_document input;
+    [%expect
+      {| Validation Error: Field, 'foo', with type 'FooInput', must be output type. |}]
   ;;
 end
