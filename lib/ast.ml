@@ -287,6 +287,7 @@ module SelectionField = struct
   type t =
     | Field of string
     | SpreadField of string
+    | InlineFragment of sub_field
     | SubField of sub_field
   [@@deriving show { with_path = false }, sexp]
 

@@ -6,6 +6,7 @@
   core
   alcotest
   fmt
+  ppx_let
   ppx_inline_test
   ppx_deriving
   ppx_expect
@@ -16,6 +17,7 @@
  (preprocess
   (pps
    ppx_expect
+   ppx_let
    ppx_deriving.show
    ppx_deriving.enum
    ppx_deriving.ord

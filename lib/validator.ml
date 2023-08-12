@@ -126,7 +126,7 @@ let add_directive validator directive =
 
 let rec validate validator node =
   let* validator = build_types_map validator node in
-  let* validator = build_possible_types_map validator node in
+  (* let* validator = build_possible_types_map validator node in *)
   match node with
   | Ast.Document d -> validate_document validator d
   | _ -> Error (Validation_error.ExpectedType "node type")
