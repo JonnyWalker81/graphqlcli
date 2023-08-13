@@ -285,15 +285,15 @@ end
 
 module SelectionField = struct
   type t =
-    | Field of string
+    | Field of sub_field
     | SpreadField of string
     | InlineFragment of sub_field
-    | SubField of sub_field
+  (* | SubField of sub_field *)
   [@@deriving show { with_path = false }, sexp]
 
   and sub_field =
     { name : string
-    ; fields : t list
+    ; fields : t list option
     }
   [@@deriving show { with_path = false }, sexp]
 end
