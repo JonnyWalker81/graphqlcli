@@ -125,8 +125,6 @@ let rec skip_while parser condition =
   if condition parser then skip_while (next_token parser) condition else parser
 ;;
 
-let parser_error parser err = Error (parser.lexer.line, err)
-
 let name_to_directive_location name =
   match name with
   | Token.Name "FIELD_DEFINITION" ->
@@ -190,6 +188,11 @@ let failwith_parser_error parser msg =
        msg
        (Token.show parser.cur_token)
        (Token.show parser.peek_token))
+;;
+
+let parser_error parser err =
+  let () = print_parser_state ~msg:"parser_error" parser in
+  Error (parser.lexer.line, err)
 ;;
 
 let rec parse parser = parse_ parser []
@@ -440,23 +443,29 @@ and parse_fragment parser =
     let parser = next_token parser in
     let parser = next_token parser in
     let* parser, type_condition = parse_name parser in
-    let parser, ok = expect_peek_left_brace parser in
-    if ok
+    (* let parser, ok = expect_peek_left_brace parser in *)
+    if phys_equal parser.peek_token Token.LeftBrace
     then
       let* parser, selection = parse_required_selection_set parser in
-      let parser, ok = expect_peek_right_brace parser in
-      if ok
-      then
-        Ok
-          ( parser
-          , Definition.ExecutableDefinition
-              (ExecutableDefinition.FragmentDefinition { name; type_condition; selection })
-          )
-      else
-        parser_error
-          parser
-          (Parse_error.ExpectedToken
-             ("parse_fragment", "expected right brace after fragment selection"))
+      Ok
+        ( next_token parser
+        , Definition.ExecutableDefinition
+            (ExecutableDefinition.FragmentDefinition { name; type_condition; selection })
+        )
+      (* let parser, ok = expect_peek_right_brace parser in *)
+      (* if ok *)
+      (* then ( *)
+      (*   let () = print_parser_state ~msg:"return parse_fragment" parser in *)
+      (*   Ok *)
+      (*     ( next_token parser *)
+      (*     , Definition.ExecutableDefinition *)
+      (*         (ExecutableDefinition.FragmentDefinition { name; type_condition; selection }) *)
+      (*     )) *)
+      (* else *)
+      (*   parser_error *)
+      (*     parser *)
+      (*     (Parse_error.ExpectedToken *)
+      (*        ("parse_fragment", "expected right brace after fragment selection"))) *)
     else
       parser_error
         parser
@@ -502,45 +511,57 @@ and parse_query operation_type parser =
       | _ -> Ok (parser, None, _name)
     in
     let* parser, selection = parse_required_selection_set parser in
-    let () = print_parser_state ~msg:"after selection set" parser in
-    let parser, ok = expect_peek_right_brace parser in
-    (match ok with
-    | false ->
-      parser_error
-        parser
-        (Parse_error.ExpectedToken
-           ("parse_query", "expected closing right brace for selection set"))
-    | true ->
-      let parser, ok = expect_peek_right_brace parser in
-      (match ok with
-      | false ->
-        parser_error
-          parser
-          (Parse_error.ExpectedToken
-             ("parse_query", "expected closing right brace for query"))
-      | true ->
-        Ok
-          ( next_token parser
-          , Definition.ExecutableDefinition
-              (ExecutableDefinition.OperationDefinition
-                 { name = operation
-                 ; operation = operation_type
-                 ; args
-                 ; variables = vars
-                 ; selection
-                 }) )))
+    Ok
+      ( next_token parser
+      , Definition.ExecutableDefinition
+          (ExecutableDefinition.OperationDefinition
+             { name = operation
+             ; operation = operation_type
+             ; args
+             ; variables = vars
+             ; selection
+             }) )
+    (* let parser, ok = expect_peek_right_brace parser in *)
+    (* (match ok with *)
+    (* | false -> *)
+    (*   parser_error *)
+    (*     parser *)
+    (*     (Parse_error.ExpectedToken *)
+    (*        ("parse_query", "expected closing right brace for selection set")) *)
+    (* | true -> *)
+    (*   let parser, ok = expect_peek_right_brace parser in *)
+    (*   (match ok with *)
+    (*   | false -> *)
+    (*     let () = print_parser_state ~msg:"after selection set - inner" parser in *)
+    (*     parser_error *)
+    (*       parser *)
+    (*       (Parse_error.ExpectedToken *)
+    (*          ("parse_query", "expected closing right brace for query")) *)
+    (*   | true -> *)
+    (*     let () = print_parser_state ~msg:"parse_query return" parser in *)
+    (*     Ok *)
+    (*       ( next_token parser *)
+    (*       , Definition.ExecutableDefinition *)
+    (*           (ExecutableDefinition.OperationDefinition *)
+    (*              { name = operation *)
+    (*              ; operation = operation_type *)
+    (*              ; args *)
+    (*              ; variables = vars *)
+    (*              ; selection *)
+    (*              }) ))) *)
   | _ ->
     parser_error parser (Parse_error.ExpectedToken ("parse_query", "expected left brace"))
 
 and parse_required_selection_set parser =
   match parser.peek_token with
   | Token.LeftBrace ->
-    let parser = next_token parser in
+    (* let parser = next_token parser in *)
     let parser = next_token parser in
     let rec parse_inner parser selection_list parse_callback =
       match parser.peek_token with
-      | Token.RightBrace -> Ok (parser, List.rev selection_list)
+      | Token.RightBrace -> Ok (next_token parser, List.rev selection_list)
       | _ ->
+        let () = print_parser_state ~msg:"parse_required_selection_set" parser in
         let* parser, selection = parse_callback parser in
         parse_inner parser (selection :: selection_list) parse_callback
     in
@@ -551,6 +572,7 @@ and parse_required_selection_set parser =
       (Parse_error.ExpectedToken ("parse_required_selection_set", "expected left brace"))
 
 and parse_selection parser =
+  let () = print_parser_state ~msg:"parse_selection" parser in
   match parser.peek_token with
   | Token.Ellipsis -> parse_query_fragment parser
   | _ -> parse_field parser
@@ -560,34 +582,34 @@ and parse_query_fragment parser =
   | Token.Name "on" ->
     Ok (parser, Ast.SelectionField.Field { name = "foo"; fields = None })
   | _ ->
-    let () = print_parser_state parser in
+    let parser = next_token parser in
     let parser = next_token parser in
     let* parser, name = parse_name parser in
     Ok (parser, Ast.SelectionField.SpreadField name)
 
 and parse_field parser =
-  (* let parser = next_token parser in *)
+  let parser = next_token parser in
   let* parser, name = parse_name parser in
-  match parser.peek_token with
-  | Token.LeftBrace ->
-    let parser = next_token parser in
-    let* parser, fields = parse_optional_selection parser in
-    Ok (parser, Ast.SelectionField.Field { name; fields = Some fields })
-  | _ ->
-    let parser = next_token parser in
-    Ok (parser, Ast.SelectionField.Field { name; fields = None })
+  let* parser, fields =
+    match parser.peek_token with
+    | Token.LeftBrace ->
+      let parser = next_token parser in
+      let* parser, fields = parse_optional_selection parser in
+      Ok (parser, Some fields)
+    | _ -> Ok (parser, None)
+  in
+  Ok (parser, Ast.SelectionField.Field { name; fields })
 
 and parse_optional_selection parser =
   let rec parse_inner parser selection_set callback =
     match parser.peek_token with
-    | Token.RightBrace ->
-      let* parser, selection = callback parser in
-      Ok (parser, List.rev (selection :: selection_set))
+    | Token.RightBrace -> Ok (next_token parser, List.rev selection_set)
     | _ ->
-      let parser = next_token parser in
-      (* let parser = next_token parser in *)
-      let* parser, selection = callback parser in
-      parse_inner parser (selection :: selection_set) callback
+      (match parser.cur_token with
+      | Token.RightBrace -> Ok (parser, List.rev selection_set)
+      | _ ->
+        let* parser, selection = callback parser in
+        parse_inner parser (selection :: selection_set) callback)
   in
   parse_inner parser [] parse_selection
 
@@ -684,7 +706,6 @@ and parse_variables parser =
   (* let parser = next_token parser in *)
   let parser = next_token parser in
   let rec parse_variables' parser vars =
-    let () = print_parser_state parser in
     let parser = chomp parser Token.Comma in
     match parser.peek_token with
     | Token.Name _ ->
@@ -711,7 +732,6 @@ and parse_variables parser =
           (Parse_error.ExpectedToken ("parse_variables", "expected colon after var name")))
     | Token.RightParen -> Ok (parser, Some vars)
     | _ ->
-      let () = print_parser_state ~msg:"parse_variables" parser in
       parser_error
         parser
         (Parse_error.ExpectedToken ("parse_variableds", "peek should be colon"))
@@ -1206,12 +1226,10 @@ and parse_graphql_type parser =
 and parse_name parser =
   match parser.cur_token with
   | Token.Name n -> Ok (parser, n)
-  | Token.Type ->
-    Ok (parser, Token.to_name Token.Type)
-    (* HACK: if type is seen where a name is expected than set name to "type" *)
-  | Token.Input ->
-    Ok (parser, Token.to_name Token.Input)
-    (* HACK: if type is seen where a name is expected than set name to "input" *)
+  | Token.Type -> Ok (parser, Token.to_name Token.Type)
+  (* HACK: if type is seen where a name is expected than set name to "type" *)
+  | Token.Input -> Ok (parser, Token.to_name Token.Input)
+  (* HACK: if type is seen where a name is expected than set name to "input" *)
   | _ -> parser_error parser (Parse_error.ExpectedToken ("parse_name", "expected name"))
 ;;
 
@@ -1349,9 +1367,9 @@ module Test = struct
   ;;
 
   (* match program with
-    | Ok program -> print_node program
-    | Error msg -> Fmt.failwith "error...%s" msg
-    *)
+     | Ok program -> print_node program
+     | Error msg -> Fmt.failwith "error...%s" msg
+  *)
 
   (* | Error msg -> Fmt.failwith "%a@." pp_parse_error msg *)
 
@@ -2073,7 +2091,6 @@ fragment Item on Item {
   id
   itemType
 
-  # Item-specific fields
   hasOptions
   options {
     ...Option
@@ -2200,22 +2217,37 @@ query items($query: ItemQuery) {
   (*   let%expect_test "testMutationWithInterfaces" = *)
   (*     let input = *)
   (*       {| *)
-(* mutation detachOption($projectID: UUID!, $option: UUID!, $costMode: CostMode!) { *)
-(*   detachOption(projectID: $projectID, option: $option, costMode: $costMode) { *)
-(*     ... on Option { *)
-(*       foo *)
-(*       bar *)
-(*     } *)
-(*     ... on Item { *)
-(*       baz *)
-(*       test *)
-(*     } *)
-(*   } *)
-(* } *)
-(*     |} *)
+           (* mutation detachOption($projectID: UUID!, $option: UUID!, $costMode: CostMode!) { *)
+           (*   detachOption(projectID: $projectID, option: $option, costMode: $costMode) { *)
+           (*     ... on Option { *)
+           (*       foo *)
+           (*       bar *)
+           (*     } *)
+           (*     ... on Item { *)
+           (*       baz *)
+           (*       test *)
+           (*     } *)
+           (*   } *)
+           (* } *)
+           (*     |} *)
   (*     in *)
   (*     expect_document input; *)
   (*     [%expect {| *)
 
-(*     |}] *)
+         (*     |}] *)
+  let%expect_test "testFragment" =
+    let input =
+      {|
+fragment NestedFrag on NestedFrag {
+                 view {
+                 ...View
+                 }
+
+}
+|}
+    in
+    expect_document input;
+    [%expect {|
+       |}]
+  ;;
 end
