@@ -262,6 +262,11 @@ module TypeDefinition = struct
     | Input i -> i.fields
     | _ -> []
   ;;
+
+  let should_validate = function
+    | Scalar _ | Object _ | Interface _ | Union _ | Enum _ | Input _ -> true
+    | _ -> false
+  ;;
 end
 
 module Schema = struct
@@ -332,6 +337,11 @@ module Definition = struct
     | ExecutableDefinition of ExecutableDefinition.t
     | Directive of DirectiveDefinition.t
   [@@deriving show { with_path = false }, sexp]
+
+  let name = function
+    | TypeDefinition d -> TypeDefinition.name d
+    | _ -> ""
+  ;;
 end
 
 type node = Document of Definition.t list

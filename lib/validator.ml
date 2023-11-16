@@ -75,7 +75,8 @@ let update_types_map validator key data =
       ; possible_types = validator.possible_types
       ; implements = validator.implements
       }
-  | `Duplicate -> Error (Validation_error.DuplicateType key)
+  | `Duplicate -> let () = Fmt.pr "key: %s\n" key in
+                  Error (Validation_error.DuplicateType key)
 ;;
 
 let update_possible_types_map validator key data =
@@ -106,7 +107,11 @@ let update_implements_map validator key data =
   | _ -> Ok validator
 ;;
 
-let add_type_def validator def = update_types_map validator (TypeDefinition.name def) def
+let add_type_def validator def =
+  if TypeDefinition.should_validate def then
+    update_types_map validator (TypeDefinition.name def) def
+  else
+    Ok validator
 
 let add_directive validator directive =
   match

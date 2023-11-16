@@ -443,7 +443,6 @@ and parse_fragment parser =
     let parser = next_token parser in
     let parser = next_token parser in
     let* parser, type_condition = parse_name parser in
-    (* let parser, ok = expect_peek_left_brace parser in *)
     if phys_equal parser.peek_token Token.LeftBrace
     then
       let* parser, selection = parse_required_selection_set parser in
@@ -452,20 +451,6 @@ and parse_fragment parser =
         , Definition.ExecutableDefinition
             (ExecutableDefinition.FragmentDefinition { name; type_condition; selection })
         )
-      (* let parser, ok = expect_peek_right_brace parser in *)
-      (* if ok *)
-      (* then ( *)
-      (*   let () = print_parser_state ~msg:"return parse_fragment" parser in *)
-      (*   Ok *)
-      (*     ( next_token parser *)
-      (*     , Definition.ExecutableDefinition *)
-      (*         (ExecutableDefinition.FragmentDefinition { name; type_condition; selection }) *)
-      (*     )) *)
-      (* else *)
-      (*   parser_error *)
-      (*     parser *)
-      (*     (Parse_error.ExpectedToken *)
-      (*        ("parse_fragment", "expected right brace after fragment selection"))) *)
     else
       parser_error
         parser
@@ -521,47 +506,17 @@ and parse_query operation_type parser =
              ; variables = vars
              ; selection
              }) )
-    (* let parser, ok = expect_peek_right_brace parser in *)
-    (* (match ok with *)
-    (* | false -> *)
-    (*   parser_error *)
-    (*     parser *)
-    (*     (Parse_error.ExpectedToken *)
-    (*        ("parse_query", "expected closing right brace for selection set")) *)
-    (* | true -> *)
-    (*   let parser, ok = expect_peek_right_brace parser in *)
-    (*   (match ok with *)
-    (*   | false -> *)
-    (*     let () = print_parser_state ~msg:"after selection set - inner" parser in *)
-    (*     parser_error *)
-    (*       parser *)
-    (*       (Parse_error.ExpectedToken *)
-    (*          ("parse_query", "expected closing right brace for query")) *)
-    (*   | true -> *)
-    (*     let () = print_parser_state ~msg:"parse_query return" parser in *)
-    (*     Ok *)
-    (*       ( next_token parser *)
-    (*       , Definition.ExecutableDefinition *)
-    (*           (ExecutableDefinition.OperationDefinition *)
-    (*              { name = operation *)
-    (*              ; operation = operation_type *)
-    (*              ; args *)
-    (*              ; variables = vars *)
-    (*              ; selection *)
-    (*              }) ))) *)
   | _ ->
     parser_error parser (Parse_error.ExpectedToken ("parse_query", "expected left brace"))
 
 and parse_required_selection_set parser =
   match parser.peek_token with
   | Token.LeftBrace ->
-    (* let parser = next_token parser in *)
     let parser = next_token parser in
     let rec parse_inner parser selection_list parse_callback =
       match parser.peek_token with
       | Token.RightBrace -> Ok (next_token parser, List.rev selection_list)
       | _ ->
-        let () = print_parser_state ~msg:"parse_required_selection_set" parser in
         let* parser, selection = parse_callback parser in
         parse_inner parser (selection :: selection_list) parse_callback
     in
@@ -572,17 +527,20 @@ and parse_required_selection_set parser =
       (Parse_error.ExpectedToken ("parse_required_selection_set", "expected left brace"))
 
 and parse_selection parser =
-  let () = print_parser_state ~msg:"parse_selection" parser in
   match parser.peek_token with
   | Token.Ellipsis -> parse_query_fragment parser
   | _ -> parse_field parser
 
 and parse_query_fragment parser =
+  let parser = next_token parser in
   match parser.peek_token with
   | Token.Name "on" ->
-    Ok (parser, Ast.SelectionField.Field { name = "foo"; fields = None })
-  | _ ->
     let parser = next_token parser in
+    let parser = next_token parser in
+    let* parser, name = parse_name parser in
+    let* parser, fields = parse_required_selection_set parser in
+    Ok (parser, Ast.SelectionField.InlineFragment { name; fields = Some fields })
+  | _ ->
     let parser = next_token parser in
     let* parser, name = parse_name parser in
     Ok (parser, Ast.SelectionField.SpreadField name)
@@ -612,66 +570,6 @@ and parse_optional_selection parser =
         parse_inner parser (selection :: selection_set) callback)
   in
   parse_inner parser [] parse_selection
-
-(* and parse_selection_set parser = *)
-(*   let rec parse_selection_set' parser set parent depth = *)
-(*     match parser.peek_token with *)
-(*     | Token.Name _ -> *)
-(*       let parser = next_token parser in *)
-(*       let* parser, name = parse_name parser in *)
-(*       parse_selection_set' *)
-(*         parser *)
-(*         (SelectionField.Field name :: set) *)
-(*         (Some name) *)
-(*         (depth + 1) *)
-(*     | Token.Ellipsis -> *)
-(*       let parser = next_token parser in *)
-(*       (match parser.peek_token with *)
-(*       | Token.Name "on" -> *)
-(*         let () = print_parser_state ~msg:("inline case: " ^ string_of_int depth) parser in *)
-(*         let parser = next_token parser in *)
-(*         let* parser, paren_name = parse_name parser in *)
-(*         let* parser, fields = parse_selection_set parser in *)
-(*         let name = Option.value parent ~default:"" in *)
-(*         let ss = SelectionField.InlineFragment SelectionField.{ name; fields } in *)
-(*         (\* let parser, ok = expect_peek_right_brace parser in *\) *)
-(*         let () = print_parser_state ~msg:"after inline constructor" parser in *)
-(*         parse_selection_set' parser (ss :: set) (Some name) (depth + 1) *)
-(*         (\* (match ok with *\) *)
-(*         (\* | true -> *\) *)
-(*         (\*   let () = print_parser_state ~msg:"inline fragment" parser in *\) *)
-(*         (\*   parse_selection_set' parser (ss :: set) (Some name) *\) *)
-(*         (\* | false -> *\) *)
-(*         (\*   parser_error *\) *)
-(*         (\*     parser *\) *)
-(*         (\*     (Parse_error.ExpectedToken *\) *)
-(*         (\*        ("parse_selection_set", "expected right brace closing the sub selection"))) *\) *)
-(*       | Token.Name _ -> *)
-(*         let parser = next_token parser in *)
-(*         let* parser, name = parse_name parser in *)
-(*         let ss = SelectionField.SpreadField name in *)
-(*         parse_selection_set' parser (ss :: set) None (depth + 1) *)
-(*       | _ -> *)
-(*         parser_error *)
-(*           parser *)
-(*           (Parse_error.ExpectedToken ("parse_selection_sets", "name or 'on'"))) *)
-(*     | Token.LeftBrace -> *)
-(*       let () = print_parser_state ~msg:("left brace: " ^ string_of_int depth) parser in *)
-(*       let parser = next_token parser in *)
-(*       let* parser, fields = parse_selection_set parser in *)
-(*       let name = Option.value parent ~default:"" in *)
-(*       let ss = SelectionField.SubField SelectionField.{ name; fields } in *)
-(*       let () = print_parser_state ~msg:"after sub selection" parser in *)
-(*       parse_selection_set' parser (ss :: set) (Some name) (depth + 1) *)
-(*     | Token.Comment _ -> parse_selection_set' (next_token parser) set None (depth + 1) *)
-(*     | Token.RightBrace -> Ok (parser, List.rev set) *)
-(*     | _ -> *)
-(*       let () = print_parser_state ~msg:"right brace" parser in *)
-(*       parser_error *)
-(*         parser *)
-(*         (Parse_error.ExpectedToken ("parse_selection_set", "expected right brace")) *)
-(*   in *)
-(*   parse_selection_set' parser [] None 0 *)
 
 and parse_args parser =
   let parser = next_token parser in
@@ -1998,7 +1896,7 @@ query foo{
       Document: [
           (OperationDefinition
          { name = "foo"; operation = Query; args = None; variables = None;
-           selection = [(Field "field")] })
+           selection = [(Field { name = "field"; fields = None })] })
 
       ]
 
@@ -2027,7 +1925,7 @@ query foo($var1: String){
            (Some [{ name = "$var1"; ty = (NamedType "String");
                     default_value = None; directives = []; description = None }
                    ]);
-           selection = [(Field "field")] })
+           selection = [(Field { name = "field"; fields = None })] })
 
       ]
 
@@ -2079,7 +1977,11 @@ fragment Actions on Actions {
           (FragmentDefinition
          { name = "Actions"; type_condition = "Actions";
            selection =
-           [(Field "view"); (Field "edit"); (Field "add"); (Field "delete")] })
+           [(Field { name = "view"; fields = None });
+             (Field { name = "edit"; fields = None });
+             (Field { name = "add"; fields = None });
+             (Field { name = "delete"; fields = None })]
+           })
 
       ] |}]
   ;;
@@ -2126,26 +2028,29 @@ fragment Item on Item {
           (FragmentDefinition
          { name = "Item"; type_condition = "Item";
            selection =
-           [(Field "id"); (Field "itemType"); (Field "hasOptions");
-             (Field "options");
-             (SubField { name = "options"; fields = [(SpreadField "Option")] });
-             (Field "optionSubtotals");
-             (SubField
+           [(Field { name = "id"; fields = None });
+             (Field { name = "itemType"; fields = None });
+             (Field { name = "hasOptions"; fields = None });
+             (Field { name = "options"; fields = (Some [(SpreadField "Option")]) });
+             (Field
                 { name = "optionSubtotals";
-                  fields = [(SpreadField "OptionSubtotal")] });
-             (Field "estimate");
-             (SubField { name = "estimate"; fields = [(SpreadField "Estimate")] });
-             (Field "name"); (Field "number"); (Field "status");
-             (Field "milestone");
-             (SubField { name = "milestone"; fields = [(SpreadField "Milestone")] });
-             (Field "previousMilestoneStatus");
-             (SubField
+                  fields = (Some [(SpreadField "OptionSubtotal")]) });
+             (Field
+                { name = "estimate"; fields = (Some [(SpreadField "Estimate")]) });
+             (Field { name = "name"; fields = None });
+             (Field { name = "number"; fields = None });
+             (Field { name = "status"; fields = None });
+             (Field
+                { name = "milestone"; fields = (Some [(SpreadField "Milestone")]) });
+             (Field
                 { name = "previousMilestoneStatus";
-                  fields = [(SpreadField "PreviousMilestoneStatus")] });
-             (Field "scheduleImpact");
-             (SubField
+                  fields = (Some [(SpreadField "PreviousMilestoneStatus")]) });
+             (Field
                 { name = "scheduleImpact";
-                  fields = [(Field "type"); (Field "criticalPath"); (Field "days")]
+                  fields =
+                  (Some [(Field { name = "type"; fields = None });
+                          (Field { name = "criticalPath"; fields = None });
+                          (Field { name = "days"; fields = None })])
                   })
              ]
            })
@@ -2176,8 +2081,14 @@ fragment Item on Item {
           (OperationDefinition
          { name = "foo"; operation = Query; args = None; variables = None;
            selection =
-           [(Field "id"); (Field "name"); (Field "info");
-             (SubField { name = "info"; fields = [(Field "name"); (Field "bar")] })
+           [(Field { name = "id"; fields = None });
+             (Field { name = "name"; fields = None });
+             (Field
+                { name = "info";
+                  fields =
+                  (Some [(Field { name = "name"; fields = None });
+                          (Field { name = "bar"; fields = None })])
+                  })
              ]
            })
 
@@ -2214,27 +2125,61 @@ query items($query: ItemQuery) {
     |}]
   ;;
 
-  (*   let%expect_test "testMutationWithInterfaces" = *)
-  (*     let input = *)
-  (*       {| *)
-           (* mutation detachOption($projectID: UUID!, $option: UUID!, $costMode: CostMode!) { *)
-           (*   detachOption(projectID: $projectID, option: $option, costMode: $costMode) { *)
-           (*     ... on Option { *)
-           (*       foo *)
-           (*       bar *)
-           (*     } *)
-           (*     ... on Item { *)
-           (*       baz *)
-           (*       test *)
-           (*     } *)
-           (*   } *)
-           (* } *)
-           (*     |} *)
-  (*     in *)
-  (*     expect_document input; *)
-  (*     [%expect {| *)
+  let%expect_test "testMutationWithInterfaces" =
+    let input =
+      {|
+           mutation detachOption($projectID: UUID!, $option: UUID!, $costMode: CostMode!) {
+             detachOption(projectID: $projectID, option: $option, costMode: $costMode) {
+               ... on Option {
+                 foo
+                 bar
+               }
+               ... on Item {
+                 baz
+                 test
+               }
+             }
+           }
+               |}
+    in
+    expect_document input;
+    [%expect {|
+      Document: [
+          (OperationDefinition
+         { name = "detachOption"; operation = Mutation;
+           args =
+           (Some [{ name = "costMode"; value = "$costMode" };
+                   { name = "option"; value = "$option" };
+                   { name = "projectID"; value = "$projectID" }]);
+           variables =
+           (Some [{ name = "$costMode"; ty = (NonNullType (NamedType "CostMode"));
+                    default_value = None; directives = []; description = None };
+                   { name = "$option"; ty = (NonNullType (NamedType "UUID"));
+                     default_value = None; directives = []; description = None };
+                   { name = "$projectID"; ty = (NonNullType (NamedType "UUID"));
+                     default_value = None; directives = []; description = None }
+                   ]);
+           selection =
+           [(InlineFragment
+               { name = "Option";
+                 fields =
+                 (Some [(Field { name = "foo"; fields = None });
+                         (Field { name = "bar"; fields = None })])
+                 });
+             (InlineFragment
+                { name = "Item";
+                  fields =
+                  (Some [(Field { name = "baz"; fields = None });
+                          (Field { name = "test"; fields = None })])
+                  })
+             ]
+           })
 
-         (*     |}] *)
+      ]
+
+             |}]
+  ;;
+
   let%expect_test "testFragment" =
     let input =
       {|
@@ -2248,6 +2193,41 @@ fragment NestedFrag on NestedFrag {
     in
     expect_document input;
     [%expect {|
+      Document: [
+          (FragmentDefinition
+         { name = "NestedFrag"; type_condition = "NestedFrag";
+           selection =
+           [(Field { name = "view"; fields = (Some [(SpreadField "View")]) })] })
+
+      ]
+       |}]
+  ;;
+
+  let%expect_test "testInlineFragment" =
+    let input =
+      {|
+query foo {
+       foo{
+                 ... on view {
+                 ...View
+                 }
+       }
+
+}
+|}
+    in
+    expect_document input;
+    [%expect {|
+      Document: [
+          (OperationDefinition
+         { name = "foo"; operation = Query; args = None; variables = None;
+           selection =
+           [(InlineFragment
+               { name = "view"; fields = (Some [(SpreadField "View")]) })
+             ]
+           })
+
+      ]
        |}]
   ;;
 end
