@@ -6,6 +6,7 @@
   core
   alcotest
   fmt
+  jingoo
   ppx_let
   ppx_inline_test
   ppx_deriving

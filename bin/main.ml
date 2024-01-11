@@ -3,10 +3,10 @@ open Graphqlcli
 
 let ( let* ) res f = Base.Result.bind res ~f
 
-let parse file output =
+let parse file output generate =
   let files =
-    match Sys.is_directory file with
-    | `Yes -> Sys.ls_dir file
+    match Sys_unix.is_directory file with
+    | `Yes -> Sys_unix.ls_dir file
     | _ -> [ "./prelude.graphql"; file ]
   in
   let docs =
@@ -27,11 +27,17 @@ let parse file output =
     (match validator with
     | Ok _ ->
       let () = Fmt.pr "Vaidated schema: %s\n" file in
-      (match output with
-      | Some o ->
-        let () = Processor.build_csv document o in
-        Fmt.pr "procesed document..."
-      | None -> Fmt.pr "no putput specified")
+      (match output, generate with
+      | Some o, false ->
+        let _res = Processor.build_csv document o in
+        Fmt.pr "Processed schema..."
+      | None, true ->
+        let _res =
+          Processor.generate_graphql_client_queries document (fun () ->
+              Fmt.pr "callback \n")
+        in
+        Fmt.pr "Generated client types/queries/files..."
+      | _ -> Fmt.pr "nothing to process...")
     | Error msg -> Fmt.pr "Validation Error: %s\n" (Validation_error.show msg))
   | Error (line, e) -> Fmt.pr "Error parsing schema(%d): %s\n" line (Parse_error.show e)
 ;;
@@ -42,18 +48,16 @@ let command =
     ~readme:(fun () -> "")
     (let%map_open.Command use_string =
        flag "-c" (optional string) ~doc:"output csv of queries and mutations"
-     and trial = flag "-t" no_arg ~doc:" run a built-in time trial"
+     and generate = flag "-g" no_arg ~doc:"generate client GraphQL queries"
      and filename =
        (* anon (maybe_with_default "-" ("filename" %: Filename_unix.arg_type)) *)
        anon (maybe_with_default "-" ("filename" %: string))
      in
      fun () ->
-       if trial
-       then printf "Running time trial\n"
-       else (
-         match use_string with
-         | Some output -> parse filename (Some output)
-         | None -> parse filename None))
+       match use_string, generate with
+       | Some output, true | Some output, false -> parse filename (Some output) generate
+       | None, true | None, false -> parse filename None generate
+       | _ -> parse filename None false)
 ;;
 
 (* Command.Param.( *)

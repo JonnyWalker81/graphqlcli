@@ -5,13 +5,12 @@
  (libraries
   graphqlcli
   fmt
+  jingoo
   ppx_deriving
   ppx_sexp_conv
   sexplib
   async
   async_unix
-  cohttp
-  cohttp-async
   yojson
   cmdliner
   core_unix.command_unix
