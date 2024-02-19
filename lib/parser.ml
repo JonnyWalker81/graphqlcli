@@ -615,7 +615,7 @@ and parse_variables parser =
         let parser = next_token parser in
         let* parser, gql_type = parse_graphql_type parser in
         let var =
-          ArgumentDefiniton.
+          ArgumentDefinition.
             { name
             ; ty = gql_type
             ; default_value = None
@@ -1023,7 +1023,7 @@ and parse_field_args parser =
           let* parser, directives = parse_directives parser in
           let parser, arg =
             ( parser
-            , ArgumentDefiniton.
+            , ArgumentDefinition.
                 { name; ty = gql_type; default_value; directives; description = arg_desc }
             )
           in
@@ -2143,7 +2143,8 @@ query items($query: ItemQuery) {
                |}
     in
     expect_document input;
-    [%expect {|
+    [%expect
+      {|
       Document: [
           (OperationDefinition
          { name = "detachOption"; operation = Mutation;
@@ -2192,7 +2193,8 @@ fragment NestedFrag on NestedFrag {
 |}
     in
     expect_document input;
-    [%expect {|
+    [%expect
+      {|
       Document: [
           (FragmentDefinition
          { name = "NestedFrag"; type_condition = "NestedFrag";
@@ -2217,7 +2219,8 @@ query foo {
 |}
     in
     expect_document input;
-    [%expect {|
+    [%expect
+      {|
       Document: [
           (OperationDefinition
          { name = "foo"; operation = Query; args = None; variables = None;

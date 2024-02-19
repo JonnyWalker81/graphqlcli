@@ -1,7 +1,7 @@
 open Core
 open Graphqlcli
 
-let ( let* ) res f = Base.Result.bind res ~f
+(* let ( let* ) res f = Base.Result.bind res ~f *)
 
 let parse file output generate =
   let files =

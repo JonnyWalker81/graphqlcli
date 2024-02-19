@@ -44,7 +44,7 @@ module Directive = struct
   [@@deriving show { with_path = false }, sexp]
 end
 
-module ArgumentDefiniton = struct
+module ArgumentDefinition = struct
   type t =
     { name : string
     ; ty : GraphqlType.t
@@ -93,7 +93,7 @@ end
 module DirectiveDefinition = struct
   type t =
     { name : string
-    ; args : ArgumentDefiniton.t list
+    ; args : ArgumentDefinition.t list
     ; locations : DirectiveLocation.t list
     ; description : string option
     ; builtin : bool
@@ -104,7 +104,7 @@ end
 module Field = struct
   type t =
     { name : string
-    ; args : ArgumentDefiniton.t list
+    ; args : ArgumentDefinition.t list
     ; ty : GraphqlType.t
     ; directives : Directive.t list
     ; default_value : Value.t option
@@ -256,6 +256,16 @@ module TypeDefinition = struct
     | _ -> ""
   ;;
 
+  let kind = function
+    | Scalar _ -> "Scalar"
+    | Object _ -> "Object"
+    | Interface _ -> "Interface"
+    | Union _ -> "Union"
+    | Enum _ -> "Enum"
+    | Input _ -> "Input"
+    | Comment _ -> "Comment"
+  ;;
+
   let fields = function
     | Object o -> o.fields
     | Interface i -> i.fields
@@ -308,7 +318,7 @@ module OperationDefinition = struct
     { name : string
     ; operation : Operation.t
     ; args : OperationArg.t list option
-    ; variables : ArgumentDefiniton.t list option
+    ; variables : ArgumentDefinition.t list option
     ; selection : SelectionField.t list
     }
   [@@deriving show { with_path = false }, sexp]
