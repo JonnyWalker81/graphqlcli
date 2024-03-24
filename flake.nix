@@ -9,7 +9,7 @@
         [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" "x86_64-darwin" ];
       perSystem = { config, self', inputs', pkgs, system, ... }:
         let
-          inherit (pkgs) dockerTools ocaml-ng mkShell opam;
+          inherit (pkgs) dockerTools ocaml-ng mkShell opam nodejs gh;
           inherit (dockerTools) buildImage;
           inherit (ocaml-ng) ocamlPackages_5_1;
           inherit (ocamlPackages_5_1) buildDunePackage janeStreet ocaml-lsp;
@@ -18,7 +18,10 @@
 
         in {
           devShells = {
-            default = mkShell { inputsFrom = [ self'.packages.default ]; };
+            default = mkShell {
+              inputsFrom = [ self'.packages.default ];
+              buildInputs = [ nodejs gh ];
+            };
           };
 
           packages = {
@@ -59,4 +62,3 @@
         };
     };
 }
-

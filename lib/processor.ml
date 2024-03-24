@@ -68,6 +68,7 @@ let collect_vars field =
       let arg_type = Ast.GraphqlType.name arg.Ast.ArgumentDefinition.ty in
       let arg_str = Printf.sprintf "$%s: %s" arg_name arg_type in
       arg_str :: acc)
+  |> List.rev
 ;;
 
 let collect_args field =
@@ -75,77 +76,90 @@ let collect_args field =
       let arg_name = arg.Ast.ArgumentDefinition.name in
       let arg_str = Printf.sprintf "%s: $%s" arg_name arg_name in
       arg_str :: acc)
+  |> List.rev
 ;;
 
 let collect_fields fields =
   List.fold fields ~init:[] ~f:(fun acc field ->
       let field_name = field.Ast.Field.name in
       field_name :: acc)
+  |> List.rev
 ;;
 
-let print_spaces n =
+let print_spaces n buffer =
   let rec loop n =
     match n with
     | 0 -> ()
     | _ ->
-      let () = Fmt.pr " " in
+      let () = Buffer.add_char buffer ' ' in
       loop (n - 1)
   in
   loop n
 ;;
 
-let rec process_field_type processor t seen indent =
+let rec process_field_type processor t seen indent buffer =
   match t with
   | Ast.TypeDefinition.Object obj ->
-    (* let () = Fmt.pr "processing fields...%s\n" obj.name in *)
     let rec process_fields fields =
       match fields with
       | [] -> Ok ()
       | field :: rest ->
-        let () = print_spaces (indent * 3) in
-        let () = Fmt.pr "%s\n" field.Ast.Field.name in
+        let () = print_spaces (indent * 3) buffer in
+        let () = Buffer.add_string buffer (Fmt.str "%s\n" field.Ast.Field.name) in
         let field_type_name = Ast.GraphqlType.name field.Ast.Field.ty in
-        (* let () = Fmt.pr "%s\n" field_type_name in *)
-        (* let field_type_kind = Ast.GraphqlType.kind field.Ast.Field.ty in *)
         let _ =
           match Map.find processor.types field_type_name with
           | None -> Error (Processor_error.TypeNotFound field_type_name)
           | Some tt ->
-            (* let () = Fmt.pr "field type: %s\n" (TypeDefinition.kind t) in *)
             (match tt with
             | Ast.TypeDefinition.Object _oobj ->
-              (* let () = Fmt.pr "   innner processing fields...%s\n" oobj.name in *)
-              let () = print_spaces (indent * 3) in
-              let () = Fmt.pr "{\n" in
-              (* let f = collect_fields oobj.fields in *)
-              (* let () = Fmt.pr "   fields: %s\n" (String.concat ~sep:", " f) in *)
               (match Set.mem seen field_type_name with
               | false ->
                 let seen = Set.add seen field_type_name in
-                let res = process_field_type processor tt seen (indent + 1) in
-                let () = print_spaces (indent * 5) in
-                let () = Fmt.pr "}\n" in
+                let () = print_spaces (indent * 3) buffer in
+                let () = Buffer.add_string buffer (Fmt.str "{\n") in
+                let res = process_field_type processor tt seen (indent + 1) buffer in
+                let () = print_spaces (indent * 3) buffer in
+                let () = Buffer.add_string buffer (Fmt.str "}\n") in
                 res
               | _ -> Ok ())
+            | Ast.TypeDefinition.Union _ ->
+              let () =
+                print_spaces (indent * 3) buffer;
+                Buffer.add_string buffer (Fmt.str "... on %s {\n" field_type_name);
+                print_spaces (indent * 6) buffer;
+                Buffer.add_string buffer (Fmt.str "...%s\n" field_type_name);
+                print_spaces (indent * 3) buffer;
+                Buffer.add_string buffer (Fmt.str "}\n")
+              in
+              Ok ()
             | _ -> Ok ())
         in
-        (* let () = Fmt.pr "%s: %s\n" field.Ast.Field.name field_type_name in *)
         process_fields rest
     in
     process_fields obj.fields
   | _ -> Ok ()
 ;;
 
-let process_query_def processor field =
+let process_query_def processor field kind =
+  let buffer = Buffer.create 1024 in
   let args = collect_vars field in
   let () =
-    Fmt.pr "query %s(%s) {\n" field.Ast.Field.name (String.concat ~sep:", " args)
+    Buffer.add_string
+      buffer
+      (Fmt.str
+         "%s %s(%s) {\n"
+         (Core.String.lowercase kind)
+         field.Ast.Field.name
+         (String.concat ~sep:", " args))
   in
   let () =
-    Fmt.pr
-      "\t%s(%s){\n"
-      field.Ast.Field.name
-      (String.concat ~sep:", " (collect_args field))
+    Buffer.add_string
+      buffer
+      (Fmt.str
+         "\t%s(%s){\n"
+         field.Ast.Field.name
+         (String.concat ~sep:", " (collect_args field)))
   in
   (* let () = Fmt.pr "%s\n" (Ast.GraphqlType.name field.ty) in *)
   let field_type_name = Ast.GraphqlType.name field.ty in
@@ -154,11 +168,13 @@ let process_query_def processor field =
     | None -> Error (Processor_error.TypeNotFound field_type_name)
     | Some t ->
       let seen = Set.empty (module String) in
-      process_field_type processor t seen 1
+      process_field_type processor t seen 1 buffer
   in
-  let () = Fmt.pr "\t}\n" in
-  let () = Fmt.pr "}\n" in
-  Ok ()
+  let () = Buffer.add_string buffer (Fmt.str "\t}\n") in
+  let () = Buffer.add_string buffer (Fmt.str "}\n") in
+  let s = Buffer.contents buffer in
+  (* let () = Fmt.pr "%s\n" s in *)
+  Ok s
 ;;
 
 (* let process_query_def field = *)
@@ -171,18 +187,19 @@ let process_query_def processor field =
 (*   Ok () *)
 (* ;; *)
 
-let process_queries processor def =
+let process_queries processor def kind callback =
   match def with
   | Ast.Definition.TypeDefinition td ->
     (match td with
     | Ast.TypeDefinition.Object obj ->
-      let () = Fmt.pr "processing Query fields...%s\n" obj.name in
+      (* let () = Fmt.pr "processing Query fields...%s\n" obj.name in *)
       let rec process_query_fields fields =
         match fields with
         | [] -> Ok ()
         | field :: rest ->
           (* let () = Fmt.pr "%s\n" field.Ast.Field.name in *)
-          let _ = process_query_def processor field in
+          let* query = process_query_def processor field kind in
+          let () = callback field.Ast.Field.name query in
           process_query_fields rest
       in
       process_query_fields obj.fields
@@ -194,7 +211,7 @@ let update_types_map processor key data =
   match String.length key with
   | 0 -> Ok processor
   | _ ->
-    let () = Fmt.pr "key: %s\n" key in
+    (* let () = Fmt.pr "key: %s\n" key in *)
     (match Map.add ~key ~data processor.types with
     | `Ok m -> Ok { types = m }
     | `Duplicate ->
@@ -221,14 +238,14 @@ let build_types_map processor node =
   | _ -> Ok processor
 ;;
 
-let generate_graphql_client_queries document _callback =
-  let () = _callback () in
-  let () = Fmt.pr "Generating GraphQL client queries...\n" in
+let generate_graphql_client_queries document kind callback =
+  (* let () = callback () in *)
+  (* let () = Fmt.pr "Generating GraphQL client queries...\n" in *)
   let processor = init () in
   let processor = build_types_map processor document in
   match processor with
   | Ok p ->
-    let () = Fmt.pr "Processor types: %d\n" (Map.length p.types) in
+    (* let () = Fmt.pr "Processor types: %d\n" (Map.length p.types) in *)
     (match document with
     | Ast.Document defs ->
       let rec process_document_queries doc =
@@ -236,13 +253,13 @@ let generate_graphql_client_queries document _callback =
         | [] -> Ok ()
         | def :: rest ->
           let def_name = Ast.Definition.name def in
-          if String.equal def_name "Query"
-          then (
-            let () = Fmt.pr "%s\n" def_name in
-            let () = Fmt.pr "def: %s\n" (Ast.Definition.name def) in
-            let* _res = process_queries p def in
+          if String.equal def_name kind
+          then
+            (* let () = Fmt.pr "%s\n" def_name in *)
+            (* let () = Fmt.pr "def: %s\n" (Ast.Definition.name def) in *)
+            let* _res = process_queries p def kind callback in
             let () = Fmt.pr "\n" in
-            process_document_queries rest)
+            process_document_queries rest
           else process_document_queries rest
       in
       process_document_queries defs
@@ -258,7 +275,7 @@ module Test = struct
     match doc with
     | Error (_, e) -> Fmt.pr "Error: %s\n" (Parse_error.show e)
     | Ok doc ->
-      let _ = generate_graphql_client_queries doc (fun () -> Fmt.pr "callback \n") in
+      let _ = generate_graphql_client_queries doc "Query" (fun _t s -> Fmt.pr "%s\n" s) in
       ()
   ;;
 
@@ -279,7 +296,7 @@ module Test = struct
       }
 
       type Query {
-        hello: Foo
+        hello(arg1: String, arg2: UUID): Foo
       }
       |}
     in

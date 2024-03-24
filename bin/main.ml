@@ -32,9 +32,22 @@ let parse file output generate =
         let _res = Processor.build_csv document o in
         Fmt.pr "Processed schema..."
       | None, true ->
-        let _res =
-          Processor.generate_graphql_client_queries document (fun () ->
-              Fmt.pr "callback \n")
+        let () = Fmt.pr "Generating GraphQL client queries..." in
+        let _ =
+          Processor.generate_graphql_client_queries document "Query" (fun t s ->
+              let file_name = Fmt.str "queries/%s.gql" (Core.String.capitalize t) in
+              let oc = Out_channel.create file_name in
+              Printf.fprintf oc "%s" s;
+              (* Fmt.pr "%s\n" s; *)
+              Out_channel.close oc)
+        in
+        let _ =
+          Processor.generate_graphql_client_queries document "Mutation" (fun t s ->
+              let file_name = Fmt.str "mutation/%s.gql" (Core.String.capitalize t) in
+              let oc = Out_channel.create file_name in
+              Printf.fprintf oc "%s" s;
+              (* Fmt.pr "%s\n" s; *)
+              Out_channel.close oc)
         in
         Fmt.pr "Generated client types/queries/files..."
       | _ -> Fmt.pr "nothing to process...")
